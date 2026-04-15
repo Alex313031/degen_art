@@ -16,6 +16,10 @@ static HINSTANCE g_hInstance = nullptr;
 int cxClient = 0;
 int cyClient = 0;
 
+static bool s_resizing = false;
+static POINT s_resizeOrigin = {};
+static SIZE s_resizeStartSize = {};
+
 int APIENTRY wWinMain(HINSTANCE hInstance,
                       HINSTANCE hPrevInstance,
                       LPWSTR lpCmdLine,
@@ -98,6 +102,38 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           return DefWindowProc(hWnd, message, wParam, lParam);
       }
     } break;
+    case WM_LBUTTONDOWN:
+      ReleaseCapture();
+      SendMessage(hWnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+      break;
+    case WM_RBUTTONDOWN: {
+      RECT rc;
+      GetCursorPos(&s_resizeOrigin);
+      GetWindowRect(hWnd, &rc);
+      s_resizeStartSize = { rc.right - rc.left, rc.bottom - rc.top };
+      s_resizing = true;
+      SetCapture(hWnd);
+      break;
+    }
+    case WM_MOUSEMOVE: {
+      if (s_resizing) {
+        POINT pt;
+        GetCursorPos(&pt);
+        int w = s_resizeStartSize.cx + (pt.x - s_resizeOrigin.x);
+        int h = s_resizeStartSize.cy + (pt.y - s_resizeOrigin.y);
+        if (w < GetSystemMetrics(SM_CXMINTRACK)) w = GetSystemMetrics(SM_CXMINTRACK);
+        if (h < GetSystemMetrics(SM_CYMINTRACK)) h = GetSystemMetrics(SM_CYMINTRACK);
+        SetWindowPos(hWnd, nullptr, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+      }
+      break;
+    }
+    case WM_RBUTTONUP:
+      s_resizing = false;
+      ReleaseCapture();
+      break;
+    case WM_CAPTURECHANGED:
+      s_resizing = false;
+      break;
     case WM_HELP:
       LaunchHelp(hWnd);
       break;
@@ -128,9 +164,9 @@ bool InitApp(HWND hWnd) {
   if (hWnd == nullptr) {
     return false;
   }
-  const bool show_circles = false;
-  const unsigned int concurrent_shapes = 1;
-  const unsigned long draw_delay = 333UL;
+  const bool show_circles = true;
+  const unsigned int concurrent_shapes = 2;
+  const unsigned long draw_delay = 500UL;
 
   if (!ShowArt(show_circles, concurrent_shapes, draw_delay)) {
     MessageBoxW(nullptr, L"ShowArt failed!", L"ShowArt Error", MB_OK | MB_ICONERROR);

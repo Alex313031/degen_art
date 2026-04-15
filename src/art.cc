@@ -26,10 +26,10 @@ DWORD WINAPI ArtThread(LPVOID pvoid) {
   const bool draw_ellipses = g_circles;
   const unsigned int num_shapes = g_num_shapes;
   const unsigned long paint_delay = g_delay;
-  
 
-  HBRUSH hBrush = nullptr;
-  HDC hdc       = nullptr;
+  HBRUSH hBrush          = nullptr;
+  const HPEN hOldPen     = reinterpret_cast<HPEN>(GetStockObject(BLACK_PEN));
+  HDC hdc                = nullptr;
   std::random_device rng;
   std::uniform_int_distribution<int> colorDist(0, 255);
   while (g_running) {
@@ -50,11 +50,22 @@ DWORD WINAPI ArtThread(LPVOID pvoid) {
       iRed    = colorDist(rng);
       iGreen  = colorDist(rng);
       iBlue   = colorDist(rng);
-      // Create brush, paint shape, and release brush
+      // Outline is the complementary (opposite) color of the fill
+      HPEN hPen = CreatePen(PS_SOLID, 1, RGB(255 - iRed, 255 - iGreen, 255 - iBlue));
+      // Create brush from above colors
       hBrush = CreateSolidBrush(RGB(iRed, iGreen, iBlue));
+      SelectObject(hdc, hPen);
       SelectObject(hdc, hBrush);
-      Rectangle(hdc, std::min(xLeft, xRight), std::min(yTop, yBottom),
+      // Paint shape(s)
+      if (draw_ellipses) {
+        Ellipse(hdc, std::min(xLeft, xRight), std::min(yTop, yBottom),
                 std::max(xLeft, xRight), std::max(yTop, yBottom));
+      } else {
+        Rectangle(hdc, std::min(xLeft, xRight), std::min(yTop, yBottom),
+                  std::max(xLeft, xRight), std::max(yTop, yBottom));
+      }
+      SelectObject(hdc, hOldPen);
+      DeleteObject(hPen);
       DeleteObject(hBrush);
     }
     // Release HDC after all shapes are drawn

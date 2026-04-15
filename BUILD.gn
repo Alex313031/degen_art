@@ -3,8 +3,11 @@
 executable("degen_art") {
   configs += [ ":degen_art_config", ]
   sources = [
+    "src/art.cc",
+    "src/art.h",
     "src/degen_art.rc",
     "src/framework.h",
+    "src/globals.h",
     "src/main.cc",
     "src/main.h",
     "src/resource.h",

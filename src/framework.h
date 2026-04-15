@@ -3,15 +3,16 @@
 
 #include "version.h"
 
+#define NOMINMAX
 #include <windows.h>
 #include <commctrl.h>
-#include <process.h>
 
 #include <tchar.h>
 
+#include <algorithm>
 #include <iostream>
+#include <random>
 #include <string>
-#include <thread>
 
 #ifndef __FUNC__
  #define __FUNC__ __func__

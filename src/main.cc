@@ -80,6 +80,9 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
   switch (message) {
     case WM_CREATE:
+      if (mainHwnd == nullptr) {
+        mainHwnd = hWnd; // Prevent race condition in InitApp
+      }
       InitApp(hWnd);
       break;
     case WM_SIZE:

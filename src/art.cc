@@ -70,6 +70,7 @@ DWORD WINAPI ArtThread(LPVOID pvoid) {
     }
     // Release HDC after all shapes are drawn
     ReleaseDC(mainHwnd, hdc);
+    GdiFlush(); // Must flush on Windows 10/11
   }
   return 0x00000000;
 }

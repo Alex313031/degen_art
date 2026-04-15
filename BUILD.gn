@@ -1,0 +1,22 @@
+# Copyright 2026 Alex313031
+
+executable("degen_art") {
+  configs += [ ":degen_art_config", ]
+  sources = [
+    "src/degen_art.rc",
+    "src/framework.h",
+    "src/main.cc",
+    "src/main.h",
+    "src/resource.h",
+    "src/version.h",
+  ]
+}
+
+config("degen_art_config") {
+  defines = []
+  cflags = []
+  include_dirs = [ "./src", ]
+  cflags += [
+    "-Wno-narrowing",
+  ]
+}

@@ -3,6 +3,8 @@
 
 #include "framework.h"
 
+#include "debugbreak.h" // Portable trap functions
+
 // Color constants
 #define RGB_BLACK   RGB(0, 0, 0)
 #define RGB_WHITE   RGB(255, 255, 255)
@@ -13,6 +15,14 @@
 #define RGB_YELLOW  RGB(255, 255, 0)
 #define RGB_CYAN    RGB(0, 255, 255)
 #define RGB_MAGENTA RGB(255, 0, 255)
+
+// Chose which way to kill the app
+enum TrapType {
+  DEBUGBREAK = 0,
+  ASSEMBLY   = 1,
+  EXCEPTION  = 2,
+  DIV0       = 3
+};
 
 // Time constants
 inline constexpr unsigned long kSlowSpeed  = 2000UL;
@@ -25,5 +35,7 @@ inline constexpr INT MINHEIGHT = 192;
 
 // Save client area as a .BMP photo, capturing moment menu was clicked.
 bool SaveClientBitmap(HWND hWnd);
+
+void TestTrap(TrapType type);
 
 #endif // DEGENART_UTILS_H_

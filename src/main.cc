@@ -362,6 +362,9 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           g_circles = (command == IDM_ELLIPSES);
           break;
         }
+        case IDM_TESTTRAP:
+          TestTrap(EXCEPTION);
+          break;
         default:
           return DefWindowProc(hWnd, message, wParam, lParam);
       }

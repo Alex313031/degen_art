@@ -5,6 +5,7 @@ executable("degen_art") {
   sources = [
     "src/art.cc",
     "src/art.h",
+    "src/debugbreak.h",
     "src/degen_art.rc",
     "src/framework.h",
     "src/globals.h",
@@ -22,6 +23,6 @@ config("degen_art_config") {
   cflags = []
   include_dirs = [ "./src", ]
   cflags += [
-    "-Wno-narrowing",
+    "-Wno-div-by-zero",
   ]
 }

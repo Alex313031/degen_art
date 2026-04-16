@@ -45,6 +45,9 @@
 #define IDM_FAST                    217
 #define IDM_HYPER                   218
 
+// Dev menu items
+#define IDM_TESTTRAP                219
+
 // Buttons
 #define IDC_BUTTON                  300
 

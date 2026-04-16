@@ -94,6 +94,10 @@ BEGIN
             MENUITEM "&Fast   (0.5 sec.)", IDM_FAST, CHECKED
             MENUITEM "&Hyper  (0.25 sec.)", IDM_HYPER
         END
+        POPUP "&Dev"
+        BEGIN
+            MENUITEM "&Test Trap", IDM_TESTTRAP
+        END
     END
     POPUP "&Help"
     BEGIN

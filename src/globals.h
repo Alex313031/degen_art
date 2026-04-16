@@ -10,11 +10,14 @@ extern int cyClient;
 // Our main window handle
 extern HWND mainHwnd;
 
-// Controlling art painting state
+// Controlling art thread state
 extern volatile bool g_running;
 
-// For thread sync in painting
+// For thread sync on back buffer access
 extern CRITICAL_SECTION g_paintCS;
+
+// Signalled by WM_TIMER each tick to wake the art thread
+extern HANDLE g_hDrawEvent;
 
 // Current background color, changed via the Background Color menu
 extern COLORREF g_bkg_color;

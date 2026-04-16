@@ -47,6 +47,9 @@
 // Buttons
 #define IDC_BUTTON                  300
 
+// Timer IDs
+#define TIMER_ART                   400
+
 // For resources to be loaded without an ID from the system.
 #ifndef IDC_STATIC
  #define IDC_STATIC                 -1

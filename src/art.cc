@@ -3,7 +3,7 @@
 #include "globals.h"
 #include "utils.h"
 
-volatile bool g_running = false;
+volatile bool g_running  = false;
 
 bool g_circles = false;
 
@@ -43,7 +43,15 @@ DWORD WINAPI ArtThread(LPVOID pvoid) {
   // Used for the "both" mode coin toss — each shape independently picks a type.
   std::uniform_int_distribution<int> coinDist(0, 1);
   while (g_running) {
-    Sleep(g_delay); // Sleep before first update and between updates; g_delay read fresh so menu changes apply on next cycle
+    // Block until WM_TIMER signals g_hDrawEvent. The event is auto-reset, so
+    // it returns to non-signalled immediately after this call returns, making
+    // the thread wait again on the next iteration. If g_hDrawEvent is null
+    // (shutdown race), exit cleanly.
+    if (g_hDrawEvent == nullptr ||
+        WaitForSingleObject(g_hDrawEvent, INFINITE) != WAIT_OBJECT_0) {
+      break;
+    }
+    if (!g_running) break; // event was signalled to unblock shutdown
     if (cxClient == 0 && cyClient == 0) {
       continue; // Window is minimized; wait for restore
     }

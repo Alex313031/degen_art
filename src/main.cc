@@ -31,6 +31,11 @@ HBITMAP g_hbmMem = nullptr;
 // (g_hdcMem / g_hbmMem) at the same time.
 CRITICAL_SECTION g_paintCS;
 
+// Auto-reset event signalled by WM_TIMER each tick to wake the art thread.
+// Auto-reset means it returns to non-signalled automatically after
+// WaitForSingleObject unblocks, so the thread waits again next iteration.
+HANDLE g_hDrawEvent = nullptr;
+
 // Current background color. Defaults to white, changed via the Background
 // Color menu. Used when filling the back buffer on resize and on WM_PAINT.
 COLORREF g_bkg_color = RGB_WHITE;
@@ -72,10 +77,10 @@ static void InitMenuDefaults(HWND hWnd) {
 
   // Draw delay
   const struct { UINT id; unsigned long ms; } delays[] = {
-    { IDM_SLOW,   2000UL },
-    { IDM_MEDIUM, 1000UL },
-    { IDM_FAST,    500UL },
-    { IDM_HYPER,   250UL },
+    { IDM_SLOW,   kSlowSpeed },
+    { IDM_MEDIUM, kMedSpeed },
+    { IDM_FAST,   kHighSpeed },
+    { IDM_HYPER,  kHyperSpeed },
   };
   for (const auto& d : delays) {
     if (GetMenuState(hDelay, d.id, MF_BYCOMMAND) & MF_CHECKED) {
@@ -172,6 +177,15 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       g_hdcMem = CreateCompatibleDC(nullptr);
       InitMenuDefaults(hWnd);
       InitApp(hWnd);
+      break;
+    case WM_TIMER:
+      // WM_TIMER fires on the main thread at the interval set by SetTimer.
+      // We signal the art thread's event rather than drawing here directly,
+      // keeping all GDI work on the art thread and leaving the main thread
+      // free to process input and paint messages without stalling.
+      if (wParam == TIMER_ART && g_hDrawEvent != nullptr) {
+        SetEvent(g_hDrawEvent);
+      }
       break;
     case WM_ERASEBKGND:
       // Returning TRUE tells Windows we have handled background erasing
@@ -318,6 +332,14 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
             case IDM_FAST:   g_delay =  500UL; break;
             default:         g_delay =  250UL; break; // IDM_HYPER
           }
+          // Replace the timer with the new interval. SetTimer on an existing ID
+          // replaces it in place — the next tick will be at the new rate.
+          SetTimer(hWnd, TIMER_ART, g_delay, nullptr);
+          // Immediately signal the draw event so the art thread stops waiting on
+          // the old interval and re-blocks on the next WaitForSingleObject call,
+          // which will then wake at the new rate. Without this the thread would
+          // sit out the remainder of the previous tick before noticing the change.
+          if (g_hDrawEvent != nullptr) SetEvent(g_hDrawEvent);
           break;
         }
         case IDM_RECTANGLES:
@@ -378,7 +400,15 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
     case WM_QUERYENDSESSION:
       return TRUE;
     case WM_DESTROY:
+      // Stop the timer first so no more WM_TIMER messages are queued.
+      KillTimer(hWnd, TIMER_ART);
+      // Signal the art thread to exit, then close the event handle.
       g_running = false;
+      if (g_hDrawEvent != nullptr) {
+        SetEvent(g_hDrawEvent);
+        CloseHandle(g_hDrawEvent);
+        g_hDrawEvent = nullptr;
+      }
       // Clean up the back buffer. Order matters: DeleteDC first deselects
       // g_hbmMem from the memory DC, after which DeleteObject can safely free
       // the bitmap. Deleting a bitmap that is still selected into a DC is
@@ -406,6 +436,9 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 
 void ShutDownApp() {
   g_running = false;
+  // Unblock the art thread so it can observe g_running=false and exit cleanly
+  // rather than waiting indefinitely on g_hDrawEvent.
+  if (g_hDrawEvent != nullptr) SetEvent(g_hDrawEvent);
   DestroyWindow(mainHwnd);
 }
 
@@ -430,13 +463,31 @@ bool ShowArt(unsigned int num_shapes) {
   }
   g_num_shapes = num_shapes;
 
+  // Auto-reset event: WaitForSingleObject in the art thread resets it
+  // automatically, so the thread blocks again after each wakeup without
+  // needing an explicit ResetEvent call.
+  g_hDrawEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+  if (g_hDrawEvent == nullptr) return false;
+
   g_running = true;
   HANDLE art_thread = CreateThread(nullptr, 0, ArtThread, nullptr, 0, nullptr);
   if (art_thread == nullptr) {
     g_running = false;
+    CloseHandle(g_hDrawEvent);
+    g_hDrawEvent = nullptr;
     return false;
   }
   CloseHandle(art_thread);
+
+  // Start the timer that drives drawing. WM_TIMER fires every g_delay ms and
+  // signals g_hDrawEvent to wake the art thread.
+  if (!SetTimer(mainHwnd, TIMER_ART, g_delay, nullptr)) {
+    g_running = false;
+    SetEvent(g_hDrawEvent); // unblock thread so it can exit
+    CloseHandle(g_hDrawEvent);
+    g_hDrawEvent = nullptr;
+    return false;
+  }
   return true;
 }
 

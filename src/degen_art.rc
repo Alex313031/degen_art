@@ -88,10 +88,10 @@ BEGIN
         END
         POPUP "&Delay"
         BEGIN
-            MENUITEM "&Slow (2.0 sec.)",   IDM_SLOW
+            MENUITEM "&Slow   (2.0 sec.)", IDM_SLOW
             MENUITEM "&Medium (1.0 sec.)", IDM_MEDIUM
-            MENUITEM "&Fast (0.5 src.)",   IDM_FAST, CHECKED
-            MENUITEM "&Hyper (0.25 src.)", IDM_HYPER
+            MENUITEM "&Fast   (0.5 sec.)", IDM_FAST, CHECKED
+            MENUITEM "&Hyper  (0.25 sec.)", IDM_HYPER
         END
     END
     POPUP "&Help"

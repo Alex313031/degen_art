@@ -15,7 +15,7 @@ extern HDC g_hdcMem;
 // Bitmap buffer
 extern HBITMAP g_hbmMem;
 
-// Draws da pretty art stuffz
+// Draws art shapes on a background thread, woken by g_hDrawEvent each timer tick.
 DWORD WINAPI ArtThread(LPVOID pvoid);
 
 // For handling back buffer bitmap for smooth resize

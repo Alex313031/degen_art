@@ -195,11 +195,15 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       return TRUE;
     case WM_GETMINMAXINFO: {
       // Set the minimum size for the window
-      LPMINMAXINFO pMinMaxInfo      = reinterpret_cast<LPMINMAXINFO>(lParam);
-      pMinMaxInfo->ptMinTrackSize.x = 200;
-      pMinMaxInfo->ptMinTrackSize.y = 200;
-      pMinMaxInfo->ptMaxTrackSize.x = GetSystemMetrics(SM_CXMAXIMIZED);
-      pMinMaxInfo->ptMaxTrackSize.y = GetSystemMetrics(SM_CYMAXIMIZED);
+      LPMINMAXINFO pMinMaxInfo = reinterpret_cast<LPMINMAXINFO>(lParam);
+      const float xmax = static_cast<float>(GetSystemMetrics(SM_CXMAXIMIZED));
+      const float ymax = static_cast<float>(GetSystemMetrics(SM_CYMAXIMIZED));
+      const int MAXWIDTH  = static_cast<int>(xmax * 0.90f);
+      const int MAXHEIGHT = static_cast<int>(ymax * 0.90f);
+      pMinMaxInfo->ptMinTrackSize.x = MINWIDTH;
+      pMinMaxInfo->ptMinTrackSize.y = MINHEIGHT;
+      pMinMaxInfo->ptMaxTrackSize.x = MAXWIDTH;
+      pMinMaxInfo->ptMaxTrackSize.y = MAXHEIGHT;
       break;
     }
     case WM_PAINT: {

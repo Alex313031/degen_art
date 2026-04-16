@@ -20,6 +20,9 @@ inline constexpr unsigned long kMedSpeed   = 1000UL;
 inline constexpr unsigned long kHighSpeed  = 500UL;
 inline constexpr unsigned long kHyperSpeed = 250UL;
 
+inline constexpr INT MINWIDTH  = 192;
+inline constexpr INT MINHEIGHT = 192;
+
 // Save client area as a .BMP photo, capturing moment menu was clicked.
 bool SaveClientBitmap(HWND hWnd);
 

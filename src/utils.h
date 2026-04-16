@@ -36,6 +36,6 @@ inline constexpr INT MINHEIGHT = 192;
 // Save client area as a .BMP photo, capturing moment menu was clicked.
 bool SaveClientBitmap(HWND hWnd);
 
-void TestTrap(TrapType type);
+const int TestTrap(TrapType type);
 
 #endif // DEGENART_UTILS_H_

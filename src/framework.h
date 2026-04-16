@@ -4,8 +4,9 @@
 #include "version.h" // Keep this at the top!
 
 #define NOMINMAX
-#include <windows.h> // Main Windows header
+#include <windows.h>  // Main Windows header
 #include <commctrl.h> // Common Controls
+#include <commdlg.h>  // Common dialogs
 
 #include <tchar.h> // Unicode
 

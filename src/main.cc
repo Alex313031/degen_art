@@ -64,6 +64,7 @@ static void InitMenuDefaults(HWND hWnd) {
   const struct { UINT id; COLORREF color; } bkgs[] = {
     { IDM_WHITE_BKG, RGB_WHITE },
     { IDM_BLACK_BKG, RGB_BLACK },
+    { IDM_GREY_BKG,  RGB_GREY },
     { IDM_RED_BKG,   RGB_RED   },
     { IDM_GREEN_BKG, RGB_GREEN },
     { IDM_BLUE_BKG,  RGB_BLUE  },
@@ -195,10 +196,10 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
     case WM_GETMINMAXINFO: {
       // Set the minimum size for the window
       LPMINMAXINFO pMinMaxInfo      = reinterpret_cast<LPMINMAXINFO>(lParam);
-      pMinMaxInfo->ptMinTrackSize.x = 106;
-      pMinMaxInfo->ptMinTrackSize.y = 80;
-      pMinMaxInfo->ptMaxTrackSize.x = 1920;
-      pMinMaxInfo->ptMaxTrackSize.y = 1080;
+      pMinMaxInfo->ptMinTrackSize.x = 200;
+      pMinMaxInfo->ptMinTrackSize.y = 200;
+      pMinMaxInfo->ptMaxTrackSize.x = GetSystemMetrics(SM_CXMAXIMIZED);
+      pMinMaxInfo->ptMaxTrackSize.y = GetSystemMetrics(SM_CYMAXIMIZED);
       break;
     }
     case WM_PAINT: {
@@ -290,6 +291,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         }
         case IDM_WHITE_BKG:
         case IDM_BLACK_BKG:
+        case IDM_GREY_BKG:
         case IDM_RED_BKG:
         case IDM_GREEN_BKG:
         case IDM_BLUE_BKG: {
@@ -299,6 +301,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           switch (command) {
             case IDM_WHITE_BKG: g_bkg_color = RGB_WHITE; break;
             case IDM_BLACK_BKG: g_bkg_color = RGB_BLACK; break;
+            case IDM_GREY_BKG:  g_bkg_color = RGB_GREY; break;
             case IDM_RED_BKG:   g_bkg_color = RGB_RED;   break;
             case IDM_GREEN_BKG: g_bkg_color = RGB_GREEN; break;
             default:            g_bkg_color = RGB_BLUE;  break;
@@ -363,7 +366,28 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       ReleaseCapture();
       SendMessage(hWnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
       break;
-    case WM_RBUTTONDOWN: {
+    case WM_CONTEXTMENU: {
+      // TrackPopupMenu is called with the actual Settings submenu handle from
+      // the menu bar. Because it is the same HMENU object, all checkmarks and
+      // grayed states are shared automatically — no extra synchronization is
+      // needed. WM_COMMAND messages dispatched from the popup go to hWnd and
+      // are handled by the existing WM_COMMAND cases below.
+      int x = GET_X_LPARAM(lParam);
+      int y = GET_Y_LPARAM(lParam);
+      // lParam is (-1, -1) when triggered by keyboard (Menu key / Shift+F10).
+      // Fall back to the top-left corner of the client area in that case.
+      if (x == -1 && y == -1) {
+        POINT pt = { 0, 0 };
+        ClientToScreen(hWnd, &pt);
+        x = pt.x;
+        y = pt.y;
+      }
+      HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
+      TrackPopupMenu(hSettings, TPM_RIGHTBUTTON | TPM_LEFTALIGN | TPM_TOPALIGN,
+                     x, y, 0, hWnd, nullptr);
+      break;
+    }
+    case WM_MBUTTONDOWN: {
       RECT rc;
       GetCursorPos(&s_resizeOrigin);
       GetWindowRect(hWnd, &rc);
@@ -384,7 +408,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       }
       break;
     }
-    case WM_RBUTTONUP:
+    case WM_MBUTTONUP:
       s_resizing = false;
       ReleaseCapture();
       break;

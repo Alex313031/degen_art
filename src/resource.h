@@ -34,15 +34,16 @@
 // Background color choices
 #define IDM_WHITE_BKG               209
 #define IDM_BLACK_BKG               210
-#define IDM_RED_BKG                 211
-#define IDM_GREEN_BKG               212
-#define IDM_BLUE_BKG                213
+#define IDM_GREY_BKG                211
+#define IDM_RED_BKG                 212
+#define IDM_GREEN_BKG               213
+#define IDM_BLUE_BKG                214
 
 // Drawing speed
-#define IDM_SLOW                    214
-#define IDM_MEDIUM                  215
-#define IDM_FAST                    216
-#define IDM_HYPER                   217
+#define IDM_SLOW                    215
+#define IDM_MEDIUM                  216
+#define IDM_FAST                    217
+#define IDM_HYPER                   218
 
 // Buttons
 #define IDC_BUTTON                  300

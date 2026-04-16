@@ -82,6 +82,7 @@ BEGIN
         BEGIN
             MENUITEM "&White", IDM_WHITE_BKG, CHECKED
             MENUITEM "&Black", IDM_BLACK_BKG
+            MENUITEM "&Grey",  IDM_GREY_BKG
             MENUITEM "&Red",   IDM_RED_BKG
             MENUITEM "&Green", IDM_GREEN_BKG
             MENUITEM "&Blue",  IDM_BLUE_BKG
@@ -107,8 +108,9 @@ IDC_MAIN ACCELERATORS
 BEGIN
     "?",       IDM_ABOUT, ASCII,   ALT          // "?" key
     VK_OEM_2,  IDM_ABOUT, VIRTKEY, ALT          // "/" key
+    0x51,      IDM_EXIT,  VIRTKEY, CONTROL      // Ctrl+Q
     VK_ESCAPE, IDM_EXIT,  VIRTKEY, NOINVERT     // Esc key
-    //0x52,      IDM_RUN,   VIRTKEY, CONTROL      // Ctrl+R
+    0x52,      IDM_RECTANGLES, VIRTKEY, CONTROL // Ctrl+R
 END
 
 // About Dialog Box

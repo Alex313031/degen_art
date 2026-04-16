@@ -1,23 +1,44 @@
 #ifndef DEGENART_FRAMEWORK_H_
 #define DEGENART_FRAMEWORK_H_
 
-#include "version.h"
+#include "version.h" // Keep this at the top!
 
 #define NOMINMAX
-#include <windows.h>
-#include <commctrl.h>
+#include <windows.h> // Main Windows header
+#include <commctrl.h> // Common Controls
 
-#include <tchar.h>
+#include <tchar.h> // Unicode
 
-#include <algorithm>
-#include <iostream>
-#include <random>
-#include <string>
+#include <algorithm> // std::min/std::max
+#include <iostream>  // Console output and ostringstream
+#include <random>    // Randomization functions
+#include <string>    // Every C++ app needs this right? lol.
 
+#ifdef __cplusplus
+ #if __cplusplus < 201103L || !defined(__cplusplus)
+  // For old compilers without constexpr or inline
+  #if !defined(constexpr) || !defined(__cpp_constexpr)
+   typedef const constexpr;
+  #endif // constexpr
+  #if !defined(inline)
+   #define inline
+  #endif // inline
+ #endif
+#endif
+
+// Alias
 #ifndef __FUNC__
  #define __FUNC__ __func__
 #endif
 
+// Defines for missing windowsx.h definitions, don't want to inlcude
+// the heavy .h file just for this one thing.
+#if !defined(GET_X_LPARAM) || !defined(GET_Y_LPARAM)
+ #define GET_X_LPARAM(lp) ((int)(short)LOWORD(lp))
+ #define GET_Y_LPARAM(lp) ((int)(short)HIWORD(lp))
+#endif
+
+// Convert compiler defines to usable bools
 inline constexpr bool is_dcheck =
 #ifdef DCHECK_ON
     true;

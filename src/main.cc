@@ -20,6 +20,44 @@ static bool s_resizing = false;
 static POINT s_resizeOrigin = {};
 static SIZE s_resizeStartSize = {};
 
+HDC g_hdcMem              = nullptr;
+static HBITMAP g_hbmMem   = nullptr;
+// CRITICAL_SECTION is a lightweight Win32 synchronization primitive for mutual
+// exclusion between threads on the same process. Unlike a mutex, it cannot be
+// shared across processes, but is faster for intra-process use. We use it to
+// prevent the art thread and the main thread from accessing the back buffer
+// (g_hdcMem / g_hbmMem) at the same time.
+CRITICAL_SECTION g_paintCS;
+
+// Creates or replaces the off-screen back buffer to match the current client
+// area size. A "back buffer" is an off-screen bitmap we draw into before
+// presenting to the screen. This lets WM_PAINT restore any region that gets
+// invalidated (e.g. another window dragged over ours) without losing shapes.
+//
+// A "compatible" DC/bitmap mirrors the pixel format of the real window DC so
+// that BitBlt can copy between them without color conversion overhead.
+static void RecreateBackBuffer(HWND hWnd, int cx, int cy) {
+  if (cx <= 0 || cy <= 0 || g_hdcMem == nullptr) return;
+  // Borrow the window DC only to query its pixel format for CreateCompatibleBitmap.
+  HDC hdcWin = GetDC(hWnd);
+  HBITMAP hbmNew = CreateCompatibleBitmap(hdcWin, cx, cy);
+  ReleaseDC(hWnd, hdcWin);
+  // Hold the lock while swapping the bitmap so the art thread cannot draw into
+  // g_hdcMem while we are replacing what it points at.
+  EnterCriticalSection(&g_paintCS);
+  // SelectObject swaps the new bitmap into the memory DC, making g_hdcMem ready
+  // to draw into at the new size. The previously selected bitmap is implicitly
+  // deselected and safe to delete.
+  SelectObject(g_hdcMem, hbmNew);
+  if (g_hbmMem != nullptr) DeleteObject(g_hbmMem);
+  g_hbmMem = hbmNew;
+  // Fill the fresh bitmap with white so newly exposed areas on resize show a
+  // clean background rather than uninitialized (black) pixels.
+  RECT rc = { 0, 0, cx, cy };
+  FillRect(g_hdcMem, &rc, reinterpret_cast<HBRUSH>(GetStockObject(WHITE_BRUSH)));
+  LeaveCriticalSection(&g_paintCS);
+}
+
 int APIENTRY wWinMain(HINSTANCE hInstance,
                       HINSTANCE hPrevInstance,
                       LPWSTR lpCmdLine,
@@ -32,7 +70,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
 
   WNDCLASSEXW wndclass;
   wndclass.cbSize        = sizeof(WNDCLASSEX);
-  wndclass.style         = CS_HREDRAW | CS_VREDRAW ;
+  wndclass.style         = 0;
   wndclass.lpfnWndProc   = WindowProc;
   wndclass.cbClsExtra    = 0;
   wndclass.cbWndExtra    = 0;
@@ -50,8 +88,10 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
     return 2;
   }
 
+  InitializeCriticalSection(&g_paintCS);
+
   static const LPCWSTR appTitle = APP_NAME;
-  mainHwnd = CreateWindowExW(WS_EX_OVERLAPPEDWINDOW, szClassName, appTitle,
+  mainHwnd = CreateWindowExW(WS_EX_OVERLAPPEDWINDOW | WS_EX_COMPOSITED, szClassName, appTitle,
                          WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_SIZEBOX,
                          CW_USEDEFAULT, CW_USEDEFAULT,
                          640, 480,
@@ -74,7 +114,8 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
       DispatchMessage(&msg);
     }
   }
-  return msg.wParam ;
+  DeleteCriticalSection(&g_paintCS);
+  return msg.wParam;
 }
 
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -83,11 +124,63 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       if (mainHwnd == nullptr) {
         mainHwnd = hWnd; // Prevent race condition in InitApp
       }
+      // CreateCompatibleDC(nullptr) creates an off-screen memory DC compatible
+      // with the screen. At this point it holds a 1x1 monochrome placeholder
+      // bitmap; RecreateBackBuffer (called on the first WM_SIZE) replaces it
+      // with a full-size bitmap matched to the window.
+      g_hdcMem = CreateCompatibleDC(nullptr);
       InitApp(hWnd);
       break;
+    case WM_ERASEBKGND:
+      // Returning TRUE tells Windows we have handled background erasing
+      // ourselves, suppressing the default white fill. We do our own filling
+      // in WM_PAINT so the two operations don't race or double-paint.
+      return TRUE;
+    case WM_GETMINMAXINFO: {
+      // Set the minimum size for the window
+      LPMINMAXINFO pMinMaxInfo      = reinterpret_cast<LPMINMAXINFO>(lParam);
+      pMinMaxInfo->ptMinTrackSize.x = 106;
+      pMinMaxInfo->ptMinTrackSize.y = 80;
+      pMinMaxInfo->ptMaxTrackSize.x = 1920;
+      pMinMaxInfo->ptMaxTrackSize.y = 1080;
+      break;
+    }
+    case WM_PAINT: {
+      // BeginPaint validates the dirty region and fills ps.rcPaint with the
+      // bounding rect of the area Windows wants us to repaint. Nothing is
+      // drawn to the screen until EndPaint is called.
+      PAINTSTRUCT ps;
+      HDC hdc = BeginPaint(hWnd, &ps);
+      // Fill the dirty region with white first. This covers two cases:
+      //   1. The back buffer is not ready yet (startup).
+      //   2. The window grew and ps.rcPaint extends beyond the back buffer's
+      //      bounds — those new pixels would otherwise stay black.
+      FillRect(hdc, &ps.rcPaint, reinterpret_cast<HBRUSH>(GetStockObject(WHITE_BRUSH)));
+      // Hold the lock so the art thread cannot replace the back buffer
+      // bitmap between our null-check and the BitBlt call.
+      EnterCriticalSection(&g_paintCS);
+      if (g_hdcMem != nullptr && g_hbmMem != nullptr) {
+        // BitBlt copies only the invalidated rectangle from the back buffer
+        // to the window DC. SRCCOPY means a straight pixel copy with no
+        // blending. This restores any shapes the art thread has drawn there,
+        // including regions uncovered by other windows being moved away.
+        BitBlt(hdc, ps.rcPaint.left, ps.rcPaint.top,
+               ps.rcPaint.right - ps.rcPaint.left,
+               ps.rcPaint.bottom - ps.rcPaint.top,
+               g_hdcMem, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
+      }
+      LeaveCriticalSection(&g_paintCS);
+      EndPaint(hWnd, &ps);
+      break;
+    }
     case WM_SIZE:
       cxClient = LOWORD(lParam);
       cyClient = HIWORD(lParam);
+      // The client area changed size, so recreate the back buffer to match.
+      // If the window shrank, the old bitmap is too large and wastes memory.
+      // If it grew, the old bitmap is too small and BitBlt would read outside
+      // its bounds, producing black pixels in the newly exposed area.
+      RecreateBackBuffer(hWnd, cxClient, cyClient);
       break;
     case WM_COMMAND: {
       const int command = LOWORD(wParam);
@@ -147,6 +240,20 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       return TRUE;
     case WM_DESTROY:
       g_running = false;
+      // Clean up the back buffer. Order matters: DeleteDC first deselects
+      // g_hbmMem from the memory DC, after which DeleteObject can safely free
+      // the bitmap. Deleting a bitmap that is still selected into a DC is
+      // undefined behavior in Win32.
+      EnterCriticalSection(&g_paintCS);
+      if (g_hdcMem != nullptr) {
+        DeleteDC(g_hdcMem);
+        g_hdcMem = nullptr;
+      }
+      if (g_hbmMem != nullptr) {
+        DeleteObject(g_hbmMem);
+        g_hbmMem = nullptr;
+      }
+      LeaveCriticalSection(&g_paintCS);
       PostQuitMessage(0);
       break;
     case WM_NCDESTROY:

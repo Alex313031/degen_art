@@ -4,6 +4,8 @@
 #include "framework.h"
 
 extern bool g_circles;
+extern bool g_both;
+extern bool g_monochrome;
 extern UINT g_num_shapes;
 extern unsigned long g_delay;
 

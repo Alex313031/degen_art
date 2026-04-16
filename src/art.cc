@@ -1,14 +1,21 @@
 #include "art.h"
 
 #include "globals.h"
+#include "utils.h"
 
 volatile bool g_running = false;
 
 bool g_circles = false;
 
+// When true, each shape independently coin-tosses between ellipse and rectangle.
+// Matches the IDM_BOTH default checked in the menu resource.
+bool g_both = true;
+
+bool g_monochrome = false;
+
 UINT g_num_shapes = 1;
 
-unsigned long g_delay = 1000UL;
+unsigned long g_delay = 500UL;
 
 DWORD WINAPI ArtThread(LPVOID pvoid) {
   UNREFERENCED_PARAMETER(pvoid);
@@ -23,9 +30,7 @@ DWORD WINAPI ArtThread(LPVOID pvoid) {
   int iGreen = 0;
   int iBlue  = 0;
 
-  const bool draw_ellipses = g_circles;
   const unsigned int num_shapes = g_num_shapes;
-  const unsigned long paint_delay = g_delay;
 
   HBRUSH hBrush      = nullptr;
   // BLACK_PEN is a stock GDI object (always available, never needs DeleteObject).
@@ -35,8 +40,10 @@ DWORD WINAPI ArtThread(LPVOID pvoid) {
   HDC hdc            = nullptr;
   std::random_device rng;
   std::uniform_int_distribution<int> colorDist(0, 255);
+  // Used for the "both" mode coin toss — each shape independently picks a type.
+  std::uniform_int_distribution<int> coinDist(0, 1);
   while (g_running) {
-    Sleep(paint_delay); // Sleep before first update and between updates
+    Sleep(g_delay); // Sleep before first update and between updates; g_delay read fresh so menu changes apply on next cycle
     if (cxClient == 0 && cyClient == 0) {
       continue; // Window is minimized; wait for restore
     }
@@ -56,21 +63,43 @@ DWORD WINAPI ArtThread(LPVOID pvoid) {
         yTop    = yDist(rng);
         yBottom = yDist(rng);
         // Randomize fill color
-        iRed    = colorDist(rng);
-        iGreen  = colorDist(rng);
-        iBlue   = colorDist(rng);
-        // Outline is the complementary (opposite) color of the fill.
-        // Subtracting each channel from 255 inverts it, maximizing contrast.
-        HPEN hPen = CreatePen(PS_SOLID, 1, RGB(255 - iRed, 255 - iGreen, 255 - iBlue));
+        if (g_monochrome) {
+          // A single random value applied to all channels gives a gray shade
+          // uniformly distributed between pure black and pure white.
+          iRed = iGreen = iBlue = colorDist(rng);
+        } else {
+          iRed    = colorDist(rng);
+          iGreen  = colorDist(rng);
+          iBlue   = colorDist(rng);
+        }
+        // Determine outline color
+        COLORREF outlineColor;
+        if (g_monochrome) {
+          // Dark-to-mid gray (0-128) → white outline; light gray (129-255) →
+          // black outline. iRed == iGreen == iBlue in monochrome mode so any
+          // channel works as the brightness value.
+          outlineColor = (iRed <= 128) ? RGB_WHITE : RGB_BLACK;
+        } else {
+          // Complementary color: invert each channel, maximizing contrast.
+          outlineColor = RGB(255 - iRed, 255 - iGreen, 255 - iBlue);
+        }
+        HPEN hPen = CreatePen(PS_SOLID, 1, outlineColor);
         hBrush    = CreateSolidBrush(RGB(iRed, iGreen, iBlue));
         // SelectObject makes the pen/brush active in the DC. The shape drawing
         // functions below will use whatever pen and brush are currently selected.
         SelectObject(g_hdcMem, hPen);
         SelectObject(g_hdcMem, hBrush);
+        // Determine shape type for this individual shape. g_circles and g_both
+        // are read fresh each iteration so menu changes take effect immediately
+        // without restarting the thread.
+        // - IDM_BOTH:       coin toss per shape
+        // - IDM_ELLIPSES:   g_circles=true,  g_both=false → always ellipse
+        // - IDM_RECTANGLES: g_circles=false, g_both=false → always rectangle
+        const bool use_ellipse = g_both ? (coinDist(rng) != 0) : g_circles;
         // Draw the shape into the back buffer (g_hdcMem), not the screen.
         // min/max ensure the coordinates are top-left/bottom-right regardless
         // of which random value ended up larger.
-        if (draw_ellipses) {
+        if (use_ellipse) {
           Ellipse(g_hdcMem, std::min(xLeft, xRight), std::min(yTop, yBottom),
                   std::max(xLeft, xRight), std::max(yTop, yBottom));
         } else {
@@ -121,9 +150,11 @@ void RecreateBackBuffer(HWND hWnd, int cx, int cy) {
   SelectObject(g_hdcMem, hbmNew);
   if (g_hbmMem != nullptr) DeleteObject(g_hbmMem);
   g_hbmMem = hbmNew;
-  // Fill the fresh bitmap with white so newly exposed areas on resize show a
-  // clean background rather than uninitialized (black) pixels.
+  // Fill the fresh bitmap with the current background color so newly exposed
+  // areas on resize match the rest of the canvas.
   RECT rc = { 0, 0, cx, cy };
-  FillRect(g_hdcMem, &rc, reinterpret_cast<HBRUSH>(GetStockObject(WHITE_BRUSH)));
+  HBRUSH hBrush = CreateSolidBrush(g_bkg_color);
+  FillRect(g_hdcMem, &rc, hBrush);
+  DeleteObject(hBrush);
   LeaveCriticalSection(&g_paintCS);
 }

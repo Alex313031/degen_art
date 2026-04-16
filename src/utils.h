@@ -6,6 +6,7 @@
 // Color constants
 #define RGB_BLACK   RGB(0, 0, 0)
 #define RGB_WHITE   RGB(255, 255, 255)
+#define RGB_GREY    RGB(128, 128, 128)
 #define RGB_RED     RGB(255, 0, 0)
 #define RGB_GREEN   RGB(0, 255, 0)
 #define RGB_BLUE    RGB(0, 0, 255)

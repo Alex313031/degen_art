@@ -14,7 +14,7 @@ bool InitApp(HWND hWnd);
 void ShutDownApp();
 
 // Starts filling client area with abstract art
-bool ShowArt(bool circles, unsigned int num_shapes, unsigned long delay);
+bool ShowArt(unsigned int num_shapes);
 
 // Shows help
 bool LaunchHelp(HWND hWnd);

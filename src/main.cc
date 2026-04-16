@@ -31,6 +31,68 @@ HBITMAP g_hbmMem = nullptr;
 // (g_hdcMem / g_hbmMem) at the same time.
 CRITICAL_SECTION g_paintCS;
 
+// Current background color. Defaults to white, changed via the Background
+// Color menu. Used when filling the back buffer on resize and on WM_PAINT.
+COLORREF g_bkg_color = RGB_WHITE;
+
+// Reads the CHECKED state of every menu group at startup and sets the
+// corresponding globals. This makes all defaults entirely RC-driven: changing
+// which item has CHECKED in degen_art.rc is the only code change needed to
+// alter a default setting.
+static void InitMenuDefaults(HWND hWnd) {
+  HMENU hMenu     = GetMenu(hWnd);
+  HMENU hSettings = GetSubMenu(hMenu, 1);
+  HMENU hShapes   = GetSubMenu(hSettings, 2);
+  HMENU hBkgMenu  = GetSubMenu(hSettings, 3);
+  HMENU hDelay    = GetSubMenu(hSettings, 4);
+
+  // Shape mode — exactly one of the three items must be CHECKED in the RC
+  if (GetMenuState(hShapes, IDM_RECTANGLES, MF_BYCOMMAND) & MF_CHECKED) {
+    g_circles = false; g_both = false;
+  } else if (GetMenuState(hShapes, IDM_ELLIPSES, MF_BYCOMMAND) & MF_CHECKED) {
+    g_circles = true;  g_both = false;
+  } else {
+    g_circles = false; g_both = true; // IDM_BOTH
+  }
+
+  // Background color
+  const struct { UINT id; COLORREF color; } bkgs[] = {
+    { IDM_WHITE_BKG, RGB_WHITE },
+    { IDM_BLACK_BKG, RGB_BLACK },
+    { IDM_RED_BKG,   RGB_RED   },
+    { IDM_GREEN_BKG, RGB_GREEN },
+    { IDM_BLUE_BKG,  RGB_BLUE  },
+  };
+  for (const auto& b : bkgs) {
+    if (GetMenuState(hBkgMenu, b.id, MF_BYCOMMAND) & MF_CHECKED) {
+      g_bkg_color = b.color;
+      break;
+    }
+  }
+
+  // Draw delay
+  const struct { UINT id; unsigned long ms; } delays[] = {
+    { IDM_SLOW,   2000UL },
+    { IDM_MEDIUM, 1000UL },
+    { IDM_FAST,    500UL },
+    { IDM_HYPER,   250UL },
+  };
+  for (const auto& d : delays) {
+    if (GetMenuState(hDelay, d.id, MF_BYCOMMAND) & MF_CHECKED) {
+      g_delay = d.ms;
+      break;
+    }
+  }
+
+  // Monochrome toggle — grey out color bg items if CHECKED in the RC
+  if (GetMenuState(hSettings, IDM_MONOCHROME, MF_BYCOMMAND) & MF_CHECKED) {
+    g_monochrome = true;
+    EnableMenuItem(hBkgMenu, IDM_RED_BKG,   MF_BYCOMMAND | MF_GRAYED);
+    EnableMenuItem(hBkgMenu, IDM_GREEN_BKG, MF_BYCOMMAND | MF_GRAYED);
+    EnableMenuItem(hBkgMenu, IDM_BLUE_BKG,  MF_BYCOMMAND | MF_GRAYED);
+  }
+}
+
 int APIENTRY wWinMain(HINSTANCE hInstance,
                       HINSTANCE hPrevInstance,
                       LPWSTR lpCmdLine,
@@ -64,7 +126,13 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
   InitializeCriticalSection(&g_paintCS);
 
   static const LPCWSTR appTitle = APP_NAME;
-  mainHwnd = CreateWindowExW(WS_EX_OVERLAPPEDWINDOW | WS_EX_COMPOSITED, szClassName, appTitle,
+  static const DWORD exStyle =
+#if _WIN32_WINNT >= 0x0501
+      WS_EX_OVERLAPPEDWINDOW | WS_EX_COMPOSITED;
+#else
+      WS_EX_OVERLAPPEDWINDOW;
+#endif
+  mainHwnd = CreateWindowExW(exStyle, szClassName, appTitle,
                          WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_SIZEBOX,
                          CW_USEDEFAULT, CW_USEDEFAULT,
                          640, 480,
@@ -102,6 +170,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       // bitmap; RecreateBackBuffer (called on the first WM_SIZE) replaces it
       // with a full-size bitmap matched to the window.
       g_hdcMem = CreateCompatibleDC(nullptr);
+      InitMenuDefaults(hWnd);
       InitApp(hWnd);
       break;
     case WM_ERASEBKGND:
@@ -124,11 +193,14 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       // drawn to the screen until EndPaint is called.
       PAINTSTRUCT ps;
       HDC hdc = BeginPaint(hWnd, &ps);
-      // Fill the dirty region with white first. This covers two cases:
+      // Fill the dirty region with the background color first. This covers two
+      // cases:
       //   1. The back buffer is not ready yet (startup).
       //   2. The window grew and ps.rcPaint extends beyond the back buffer's
       //      bounds — those new pixels would otherwise stay black.
-      FillRect(hdc, &ps.rcPaint, reinterpret_cast<HBRUSH>(GetStockObject(WHITE_BRUSH)));
+      HBRUSH hBkgBrush = CreateSolidBrush(g_bkg_color);
+      FillRect(hdc, &ps.rcPaint, hBkgBrush);
+      DeleteObject(hBkgBrush);
       // Hold the lock so the art thread cannot replace the back buffer
       // bitmap between our null-check and the BitBlt call.
       EnterCriticalSection(&g_paintCS);
@@ -170,6 +242,97 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         case IDM_SAVE_AS:
           SaveClientBitmap(hWnd);
           break;
+        case IDM_MONOCHROME: {
+          g_monochrome = !g_monochrome;
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
+          // Toggle the check mark on the menu item to show current state.
+          CheckMenuItem(hSettings, IDM_MONOCHROME,
+                        MF_BYCOMMAND | (g_monochrome ? MF_CHECKED : MF_UNCHECKED));
+          // Grey out or restore the color background options — only white and
+          // black are valid background choices in monochrome mode.
+          HMENU hBkgMenu = GetSubMenu(hSettings, 3);
+          const UINT colorState = g_monochrome ? MF_GRAYED : MF_ENABLED;
+          EnableMenuItem(hBkgMenu, IDM_RED_BKG,   MF_BYCOMMAND | colorState);
+          EnableMenuItem(hBkgMenu, IDM_GREEN_BKG, MF_BYCOMMAND | colorState);
+          EnableMenuItem(hBkgMenu, IDM_BLUE_BKG,  MF_BYCOMMAND | colorState);
+          // If switching into monochrome and the current background is a color
+          // (not white or black), reset it to white.
+          if (g_monochrome && g_bkg_color != RGB_WHITE && g_bkg_color != RGB_BLACK) {
+            g_bkg_color = RGB_WHITE;
+            CheckMenuRadioItem(hBkgMenu, IDM_WHITE_BKG, IDM_BLUE_BKG, IDM_WHITE_BKG, MF_BYCOMMAND);
+          }
+          // Always clear the back buffer on toggle so no mixed color/monochrome
+          // shapes remain visible after the mode change.
+          EnterCriticalSection(&g_paintCS);
+          if (g_hdcMem != nullptr && g_hbmMem != nullptr) {
+            RECT rc = { 0, 0, cxClient, cyClient };
+            HBRUSH hBrush = CreateSolidBrush(g_bkg_color);
+            FillRect(g_hdcMem, &rc, hBrush);
+            DeleteObject(hBrush);
+          }
+          LeaveCriticalSection(&g_paintCS);
+          InvalidateRect(hWnd, nullptr, FALSE);
+          break;
+        }
+        case IDM_WHITE_BKG:
+        case IDM_BLACK_BKG:
+        case IDM_RED_BKG:
+        case IDM_GREEN_BKG:
+        case IDM_BLUE_BKG: {
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
+          HMENU hBkgMenu  = GetSubMenu(hSettings, 3);
+          CheckMenuRadioItem(hBkgMenu, IDM_WHITE_BKG, IDM_BLUE_BKG, command, MF_BYCOMMAND);
+          switch (command) {
+            case IDM_WHITE_BKG: g_bkg_color = RGB_WHITE; break;
+            case IDM_BLACK_BKG: g_bkg_color = RGB_BLACK; break;
+            case IDM_RED_BKG:   g_bkg_color = RGB_RED;   break;
+            case IDM_GREEN_BKG: g_bkg_color = RGB_GREEN; break;
+            default:            g_bkg_color = RGB_BLUE;  break;
+          }
+          // Fill the back buffer with the new color immediately so the change
+          // is visible right away rather than only on the next resize.
+          EnterCriticalSection(&g_paintCS);
+          if (g_hdcMem != nullptr && g_hbmMem != nullptr) {
+            RECT rc = { 0, 0, cxClient, cyClient };
+            HBRUSH hBrush = CreateSolidBrush(g_bkg_color);
+            FillRect(g_hdcMem, &rc, hBrush);
+            DeleteObject(hBrush);
+          }
+          LeaveCriticalSection(&g_paintCS);
+          // Invalidate the whole client area so WM_PAINT blits the updated
+          // back buffer to the screen. FALSE = do not erase background first
+          // (we handle that in WM_PAINT ourselves).
+          InvalidateRect(hWnd, nullptr, FALSE);
+          break;
+        }
+        case IDM_SLOW:
+        case IDM_MEDIUM:
+        case IDM_FAST:
+        case IDM_HYPER: {
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
+          HMENU hDelay    = GetSubMenu(hSettings, 4);
+          CheckMenuRadioItem(hDelay, IDM_SLOW, IDM_HYPER, command, MF_BYCOMMAND);
+          switch (command) {
+            case IDM_SLOW:   g_delay = 2000UL; break;
+            case IDM_MEDIUM: g_delay = 1000UL; break;
+            case IDM_FAST:   g_delay =  500UL; break;
+            default:         g_delay =  250UL; break; // IDM_HYPER
+          }
+          break;
+        }
+        case IDM_RECTANGLES:
+        case IDM_ELLIPSES:
+        case IDM_BOTH: {
+          // CheckMenuRadioItem places a radio-button style check mark on the
+          // chosen item and clears the check from all others in the ID range.
+          // MF_BYCOMMAND means the IDs are item command values, not positions.
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
+          HMENU hShapes   = GetSubMenu(hSettings, 2);
+          CheckMenuRadioItem(hShapes, IDM_RECTANGLES, IDM_BOTH, command, MF_BYCOMMAND);
+          g_both    = (command == IDM_BOTH);
+          g_circles = (command == IDM_ELLIPSES);
+          break;
+        }
         default:
           return DefWindowProc(hWnd, message, wParam, lParam);
       }
@@ -250,25 +413,22 @@ bool InitApp(HWND hWnd) {
   if (hWnd == nullptr) {
     return false;
   }
-  const bool show_circles = true;
+  // All settings (shape mode, delay, background color) are already set by
+  // InitMenuDefaults. Only the fixed concurrent shape count is passed here.
   const unsigned int concurrent_shapes = 2;
-  const unsigned long draw_delay = 500UL;
-
-  if (!ShowArt(show_circles, concurrent_shapes, draw_delay)) {
+  if (!ShowArt(concurrent_shapes)) {
     MessageBoxW(nullptr, L"ShowArt failed!", L"ShowArt Error", MB_OK | MB_ICONERROR);
     return false;
   }
   return true;
 }
 
-bool ShowArt(bool circles, unsigned int num_shapes, unsigned long delay) {
-  if (num_shapes == 0 || delay == 0) {
+bool ShowArt(unsigned int num_shapes) {
+  if (num_shapes == 0 || g_delay == 0) {
     std::wcerr << L"Number of shapes or delay Out of bounds!";
     return false;
   }
-  g_circles = circles;
   g_num_shapes = num_shapes;
-  g_delay = delay;
 
   g_running = true;
   HANDLE art_thread = CreateThread(nullptr, 0, ArtThread, nullptr, 0, nullptr);

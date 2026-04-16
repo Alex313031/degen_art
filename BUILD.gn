@@ -10,6 +10,8 @@ executable("degen_art") {
     "src/globals.h",
     "src/main.cc",
     "src/main.h",
+    "src/utils.cc",
+    "src/utils.h",
     "src/resource.h",
     "src/version.h",
   ]

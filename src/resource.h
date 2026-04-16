@@ -4,23 +4,45 @@
 
 // clang-format off
 
-// Icons
+/* Icons */
 #define IDI_MAIN                    101 /* 32x32 & 48x48 icon */
 #define IDI_SMALL                   102 /* Small 16x16 icon */
 #define IDI_ABOUT                   103 /* About Dialog icon */
 
-// Main application resource, also used to attach menu
+/* Main application resource, also used to attach menu */
 #define IDC_MAIN                    106
 
-// Dialogs
+/* Dialogs */
 #define IDD_ABOUTDLG                108
 
-// Menu items
+/* Menu items */
 #define IDM_ABOUT                   200
 #define IDM_EXIT                    201
 #define IDM_HELP                    202
-#define IDM_COLOR                   203
-#define IDM_SHAPE                   204
+#define IDM_RESERVED                203
+
+// Save snapshot
+#define IDM_SAVE_AS                 204
+
+// Shape menu choices
+#define IDM_RECTANGLES              205
+#define IDM_ELLIPSES                206
+#define IDM_BOTH                    207
+
+// Color choices
+#define IDM_MONOCHROME              208 /* Only uses gray tones */
+// Background color choices
+#define IDM_WHITE_BKG               209
+#define IDM_BLACK_BKG               210
+#define IDM_RED_BKG                 211
+#define IDM_GREEN_BKG               212
+#define IDM_BLUE_BKG                213
+
+// Drawing speed
+#define IDM_SLOW                    214
+#define IDM_MEDIUM                  215
+#define IDM_FAST                    216
+#define IDM_HYPER                   217
 
 // Buttons
 #define IDC_BUTTON                  300

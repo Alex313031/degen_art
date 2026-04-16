@@ -13,8 +13,7 @@ extern HWND mainHwnd;
 // Controlling art painting state
 extern volatile bool g_running;
 
-// Back buffer for preserving painted shapes
-extern HDC g_hdcMem;
+// For thread sync in painting
 extern CRITICAL_SECTION g_paintCS;
 
 #endif // DEGENART_GLOBALS_H_

@@ -7,6 +7,7 @@
 #include "main.h"
 
 #include "resource.h"
+#include "utils.h"
 #include "version.h"
 
 HWND mainHwnd = nullptr;
@@ -20,43 +21,15 @@ static bool s_resizing = false;
 static POINT s_resizeOrigin = {};
 static SIZE s_resizeStartSize = {};
 
-HDC g_hdcMem              = nullptr;
-static HBITMAP g_hbmMem   = nullptr;
+HDC g_hdcMem     = nullptr;
+HBITMAP g_hbmMem = nullptr;
+
 // CRITICAL_SECTION is a lightweight Win32 synchronization primitive for mutual
 // exclusion between threads on the same process. Unlike a mutex, it cannot be
 // shared across processes, but is faster for intra-process use. We use it to
 // prevent the art thread and the main thread from accessing the back buffer
 // (g_hdcMem / g_hbmMem) at the same time.
 CRITICAL_SECTION g_paintCS;
-
-// Creates or replaces the off-screen back buffer to match the current client
-// area size. A "back buffer" is an off-screen bitmap we draw into before
-// presenting to the screen. This lets WM_PAINT restore any region that gets
-// invalidated (e.g. another window dragged over ours) without losing shapes.
-//
-// A "compatible" DC/bitmap mirrors the pixel format of the real window DC so
-// that BitBlt can copy between them without color conversion overhead.
-static void RecreateBackBuffer(HWND hWnd, int cx, int cy) {
-  if (cx <= 0 || cy <= 0 || g_hdcMem == nullptr) return;
-  // Borrow the window DC only to query its pixel format for CreateCompatibleBitmap.
-  HDC hdcWin = GetDC(hWnd);
-  HBITMAP hbmNew = CreateCompatibleBitmap(hdcWin, cx, cy);
-  ReleaseDC(hWnd, hdcWin);
-  // Hold the lock while swapping the bitmap so the art thread cannot draw into
-  // g_hdcMem while we are replacing what it points at.
-  EnterCriticalSection(&g_paintCS);
-  // SelectObject swaps the new bitmap into the memory DC, making g_hdcMem ready
-  // to draw into at the new size. The previously selected bitmap is implicitly
-  // deselected and safe to delete.
-  SelectObject(g_hdcMem, hbmNew);
-  if (g_hbmMem != nullptr) DeleteObject(g_hbmMem);
-  g_hbmMem = hbmNew;
-  // Fill the fresh bitmap with white so newly exposed areas on resize show a
-  // clean background rather than uninitialized (black) pixels.
-  RECT rc = { 0, 0, cx, cy };
-  FillRect(g_hdcMem, &rc, reinterpret_cast<HBRUSH>(GetStockObject(WHITE_BRUSH)));
-  LeaveCriticalSection(&g_paintCS);
-}
 
 int APIENTRY wWinMain(HINSTANCE hInstance,
                       HINSTANCE hPrevInstance,
@@ -193,6 +166,9 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           break;
         case IDM_HELP:
           LaunchHelp(hWnd);
+          break;
+        case IDM_SAVE_AS:
+          SaveClientBitmap(hWnd);
           break;
         default:
           return DefWindowProc(hWnd, message, wParam, lParam);

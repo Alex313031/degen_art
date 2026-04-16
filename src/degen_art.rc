@@ -64,8 +64,35 @@ IDC_MAIN MENU
 BEGIN
     POPUP "&File"
     BEGIN
+        MENUITEM "&Save As", IDM_SAVE_AS
         MENUITEM SEPARATOR
         MENUITEM "E&xit",    IDM_EXIT
+    END
+    POPUP "&Settings"
+    BEGIN
+        MENUITEM "&MonoChrome", IDM_MONOCHROME
+        MENUITEM SEPARATOR
+        POPUP "&Shapes"
+        BEGIN
+            MENUITEM "&Rectangles", IDM_RECTANGLES
+            MENUITEM "&Ellipses",   IDM_ELLIPSES
+            MENUITEM "&Both",       IDM_BOTH, CHECKED
+        END
+        POPUP "&Background Color"
+        BEGIN
+            MENUITEM "&White", IDM_WHITE_BKG, CHECKED
+            MENUITEM "&Black", IDM_BLACK_BKG
+            MENUITEM "&Red",   IDM_RED_BKG
+            MENUITEM "&Green", IDM_GREEN_BKG
+            MENUITEM "&Blue",  IDM_BLUE_BKG
+        END
+        POPUP "&Delay"
+        BEGIN
+            MENUITEM "&Slow (2.0 sec.)",   IDM_SLOW
+            MENUITEM "&Medium (1.0 sec.)", IDM_MEDIUM
+            MENUITEM "&Fast (0.5 src.)",   IDM_FAST, CHECKED
+            MENUITEM "&Hyper (0.25 src.)", IDM_HYPER
+        END
     END
     POPUP "&Help"
     BEGIN

@@ -9,30 +9,17 @@
 // Opens a system Save As dialog and writes the current back buffer to a 32-bit
 // BMP file at the path the user chose.
 //
+// The pixel snapshot is taken immediately (before the dialog opens) so the
+// saved image reflects the exact moment the menu item was selected, not
+// whatever the canvas looks like after the user finishes navigating the dialog.
+//
 // BMP layout (no palette for 32-bit):
 //   BITMAPFILEHEADER  (14 bytes) — magic 'BM', file size, pixel data offset
 //   BITMAPINFOHEADER  (40 bytes) — dimensions, bit depth, compression
 //   Pixel data        (w * h * 4 bytes) — 32-bit BGRA, bottom-up row order
 bool SaveClientBitmap(HWND hWnd) {
-  // Prompt the user for a destination path
-  wchar_t szFile[MAX_PATH]  = {};
-  OPENFILENAMEW ofn         = {};
-  ofn.lStructSize  = sizeof(OPENFILENAMEW);
-  ofn.hwndOwner    = hWnd;
-  ofn.lpstrFile    = szFile;
-  ofn.nMaxFile     = MAX_PATH;
-  ofn.lpstrFilter  = L"Bitmap Files (*.bmp)\0*.bmp\0All Files (*.*)\0*.*\0";
-  ofn.nFilterIndex = 1;
-  ofn.lpstrDefExt  = L"bmp";
-  ofn.lpstrTitle   = L"Save Bitmap As";
-  ofn.Flags        = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
-
-  if (!GetSaveFileNameW(&ofn)) {
-    return false; // user cancelled or dialog error
-  }
-
-  // Hold the back buffer lock for the duration of the pixel read so the art
-  // thread cannot modify the bitmap mid-capture.
+  // --- Step 1: snapshot the back buffer before opening the dialog ----------
+  // Hold the lock only for the pixel read; file I/O happens outside the CS.
   EnterCriticalSection(&g_paintCS);
 
   if (g_hdcMem == nullptr || g_hbmMem == nullptr) {
@@ -40,7 +27,6 @@ bool SaveClientBitmap(HWND hWnd) {
     return false;
   }
 
-  // Query the actual bitmap dimensions from the GDI object
   BITMAP bm = {};
   GetObject(g_hbmMem, sizeof(BITMAP), &bm);
   const int width  = bm.bmWidth;
@@ -71,6 +57,24 @@ bool SaveClientBitmap(HWND hWnd) {
 
   LeaveCriticalSection(&g_paintCS);
 
+  // --- Step 2: ask the user where to save -----------------------------------
+  wchar_t szFile[MAX_PATH]  = {};
+  OPENFILENAMEW ofn         = {};
+  ofn.lStructSize  = sizeof(OPENFILENAMEW);
+  ofn.hwndOwner    = hWnd;
+  ofn.lpstrFile    = szFile;
+  ofn.nMaxFile     = MAX_PATH;
+  ofn.lpstrFilter  = L"Bitmap Files (*.bmp)\0*.bmp\0All Files (*.*)\0*.*\0";
+  ofn.nFilterIndex = 1;
+  ofn.lpstrDefExt  = L"bmp";
+  ofn.lpstrTitle   = L"Save Bitmap As";
+  ofn.Flags        = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
+
+  if (!GetSaveFileNameW(&ofn)) {
+    return false; // user cancelled or dialog error
+  }
+
+  // --- Step 3: write the snapshot to disk ----------------------------------
   // Build the BMP file header
   const DWORD pixelDataOffset = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
   BITMAPFILEHEADER bf = {};

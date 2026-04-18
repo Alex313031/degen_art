@@ -11,9 +11,9 @@ executable("degen_art") {
     "src/globals.h",
     "src/main.cc",
     "src/main.h",
+    "src/resource.h",
     "src/utils.cc",
     "src/utils.h",
-    "src/resource.h",
     "src/version.h",
   ]
 }
@@ -23,6 +23,8 @@ config("degen_art_config") {
   cflags = []
   include_dirs = [ "./src", ]
   cflags += [
+    "-Wunused-function",
     "-Wno-div-by-zero",
   ]
+  libs = [ "winmm", ]
 }

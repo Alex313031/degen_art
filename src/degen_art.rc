@@ -70,7 +70,9 @@ BEGIN
     END
     POPUP "&Settings"
     BEGIN
-        MENUITEM "&MonoChrome", IDM_MONOCHROME
+        
+        MENUITEM "&Pause Painting", IDM_PAUSED
+        MENUITEM "&Sound?",         IDM_SOUND, CHECKED
         MENUITEM SEPARATOR
         POPUP "&Shapes"
         BEGIN
@@ -78,15 +80,18 @@ BEGIN
             MENUITEM "&Ellipses",   IDM_ELLIPSES
             MENUITEM "&Both",       IDM_BOTH, CHECKED
         END
+        MENUITEM SEPARATOR
+        MENUITEM "&MonoChrome",     IDM_MONOCHROME
         POPUP "&Background Color"
         BEGIN
-            MENUITEM "&White", IDM_WHITE_BKG, CHECKED
+            MENUITEM "&White", IDM_WHITE_BKG
             MENUITEM "&Black", IDM_BLACK_BKG
-            MENUITEM "&Grey",  IDM_GREY_BKG
+            MENUITEM "&Grey",  IDM_GREY_BKG, CHECKED
             MENUITEM "&Red",   IDM_RED_BKG
             MENUITEM "&Green", IDM_GREEN_BKG
             MENUITEM "&Blue",  IDM_BLUE_BKG
         END
+        MENUITEM SEPARATOR
         POPUP "&Delay"
         BEGIN
             MENUITEM "&Slow   (2.0 sec.)", IDM_SLOW
@@ -96,7 +101,7 @@ BEGIN
         END
         POPUP "&Dev"
         BEGIN
-            MENUITEM "&Test Trap", IDM_TESTTRAP
+            MENUITEM "&Test Trap", IDM_TESTTRAP, GRAYED
         END
     END
     POPUP "&Help"

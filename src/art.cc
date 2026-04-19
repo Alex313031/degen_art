@@ -1,9 +1,11 @@
 #include "art.h"
 
 #include "globals.h"
+#include "resource.h"
 #include "utils.h"
 
 volatile bool g_running  = false;
+volatile bool g_paused   = false;
 
 bool g_circles = false;
 
@@ -13,7 +15,7 @@ bool g_both = true;
 
 bool g_monochrome = false;
 
-UINT g_num_shapes = 1;
+volatile UINT g_num_shapes = 1;
 
 unsigned long g_delay = 500UL;
 
@@ -30,8 +32,6 @@ DWORD WINAPI ArtThread(LPVOID pvoid) {
   int iGreen = 0;
   int iBlue  = 0;
 
-  const unsigned int num_shapes = g_num_shapes;
-
   HBRUSH hBrush      = nullptr;
   // BLACK_PEN is a stock GDI object (always available, never needs DeleteObject).
   // We save it here so we can restore it into the DC after each shape, which is
@@ -43,6 +43,7 @@ DWORD WINAPI ArtThread(LPVOID pvoid) {
   // Used for the "both" mode coin toss — each shape independently picks a type.
   std::uniform_int_distribution<int> coinDist(0, 1);
   while (g_running) {
+    const unsigned int num_shapes = g_num_shapes;
     // Block until WM_TIMER signals g_hDrawEvent. The event is auto-reset, so
     // it returns to non-signalled immediately after this call returns, making
     // the thread wait again on the next iteration. If g_hDrawEvent is null
@@ -165,4 +166,65 @@ void RecreateBackBuffer(HWND hWnd, int cx, int cy) {
   FillRect(g_hdcMem, &rc, hBrush);
   DeleteObject(hBrush);
   LeaveCriticalSection(&g_paintCS);
+}
+
+void SetNumShapes(const unsigned int num) {
+  if (num > 8) {
+    g_num_shapes = 8; // Cap at eight concurrent shapes.
+  } else if (num == 0) {
+    g_num_shapes = 1; // Handle invalid 0
+  } else {
+    g_num_shapes = num;
+  }
+}
+
+bool ShowArt() {
+  if (g_num_shapes == 0 || g_delay == 0) {
+    std::wcerr << L"Number of shapes or delay Out of bounds!";
+    return false;
+  }
+
+  // Auto-reset event: WaitForSingleObject in the art thread resets it
+  // automatically, so the thread blocks again after each wakeup without
+  // needing an explicit ResetEvent call.
+  g_hDrawEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+  if (g_hDrawEvent == nullptr) return false;
+
+  g_running = true;
+  HANDLE art_thread = CreateThread(nullptr, 0, ArtThread, nullptr, 0, nullptr);
+  if (art_thread == nullptr) {
+    g_running = false;
+    CloseHandle(g_hDrawEvent);
+    g_hDrawEvent = nullptr;
+    return false;
+  }
+  CloseHandle(art_thread);
+
+  // Start the timer that drives drawing. WM_TIMER fires every g_delay ms and
+  // signals g_hDrawEvent to wake the art thread.
+  if (!SetTimer(mainHwnd, TIMER_ART, g_delay, nullptr)) {
+    g_running = false;
+    SetEvent(g_hDrawEvent); // unblock thread so it can exit
+    CloseHandle(g_hDrawEvent);
+    g_hDrawEvent = nullptr;
+    return false;
+  }
+  return true;
+}
+
+void PauseArt(HWND hWnd) {
+  if (hWnd == nullptr) {
+    return;
+  }
+  g_paused = !g_paused;
+  // Rather than tearing down the art thread, just stop (or restart) the timer
+  // that drives it. While paused, no WM_TIMER messages fire, so g_hDrawEvent
+  // is never signalled and the thread sits parked on WaitForSingleObject with
+  // no CPU cost. The back buffer keeps its current contents untouched, which
+  // is exactly what we want for Save As to capture.
+  if (g_paused) {
+    KillTimer(hWnd, TIMER_ART);
+  } else {
+    SetTimer(hWnd, TIMER_ART, g_delay, nullptr);
+  }
 }

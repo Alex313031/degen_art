@@ -13,9 +13,6 @@ bool InitApp(HWND hWnd);
 // Closes all windows and cleans up any resources.
 void ShutDownApp();
 
-// Starts filling client area with abstract art
-bool ShowArt(unsigned int num_shapes);
-
 // Shows help
 bool LaunchHelp(HWND hWnd);
 

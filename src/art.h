@@ -5,8 +5,11 @@
 
 extern bool g_circles;
 extern bool g_both;
+
 extern bool g_monochrome;
-extern UINT g_num_shapes;
+
+extern volatile UINT g_num_shapes;
+
 extern unsigned long g_delay;
 
 // Back buffer for preserving painted shapes
@@ -20,5 +23,13 @@ DWORD WINAPI ArtThread(LPVOID pvoid);
 
 // For handling back buffer bitmap for smooth resize
 void RecreateBackBuffer(HWND hWnd, int cx, int cy);
+
+void SetNumShapes(const unsigned int num);
+
+// Starts filling client area with abstract art
+bool ShowArt();
+
+// Pauses art, for i.e. taking a snapshot, or showing a friend the current state.
+void PauseArt(HWND hWnd);
 
 #endif // DEGENART_ART_H_

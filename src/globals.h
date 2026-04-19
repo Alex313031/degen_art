@@ -7,19 +7,15 @@
 extern int cxClient;
 extern int cyClient;
 
-// Our main window handle
-extern HWND mainHwnd;
+extern HWND mainHwnd; // Our main window handle
 
-// Controlling art thread state
-extern volatile bool g_running;
+extern volatile bool g_running; // Controlling art thread state
+extern volatile bool g_paused;  // Keep track of paused state. PauseArt() uses this in utils.cc
 
-// For thread sync on back buffer access
-extern CRITICAL_SECTION g_paintCS;
+extern CRITICAL_SECTION g_paintCS; // For thread sync on back buffer access
 
-// Signalled by WM_TIMER each tick to wake the art thread
-extern HANDLE g_hDrawEvent;
+extern HANDLE g_hDrawEvent; // Signalled by WM_TIMER each tick to wake the art thread
 
-// Current background color, changed via the Background Color menu
-extern COLORREF g_bkg_color;
+extern COLORREF g_bkg_color; // Current background color, changed via the Background Color menu
 
 #endif // DEGENART_GLOBALS_H_

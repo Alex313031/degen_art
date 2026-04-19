@@ -40,64 +40,7 @@ HANDLE g_hDrawEvent = nullptr;
 // Color menu. Used when filling the back buffer on resize and on WM_PAINT.
 COLORREF g_bkg_color = RGB_WHITE;
 
-// Reads the CHECKED state of every menu group at startup and sets the
-// corresponding globals. This makes all defaults entirely RC-driven: changing
-// which item has CHECKED in degen_art.rc is the only code change needed to
-// alter a default setting.
-static void InitMenuDefaults(HWND hWnd) {
-  HMENU hMenu     = GetMenu(hWnd);
-  HMENU hSettings = GetSubMenu(hMenu, 1);
-  HMENU hShapes   = GetSubMenu(hSettings, 2);
-  HMENU hBkgMenu  = GetSubMenu(hSettings, 3);
-  HMENU hDelay    = GetSubMenu(hSettings, 4);
-
-  // Shape mode — exactly one of the three items must be CHECKED in the RC
-  if (GetMenuState(hShapes, IDM_RECTANGLES, MF_BYCOMMAND) & MF_CHECKED) {
-    g_circles = false; g_both = false;
-  } else if (GetMenuState(hShapes, IDM_ELLIPSES, MF_BYCOMMAND) & MF_CHECKED) {
-    g_circles = true;  g_both = false;
-  } else {
-    g_circles = false; g_both = true; // IDM_BOTH
-  }
-
-  // Background color
-  const struct { UINT id; COLORREF color; } bkgs[] = {
-    { IDM_WHITE_BKG, RGB_WHITE },
-    { IDM_BLACK_BKG, RGB_BLACK },
-    { IDM_GREY_BKG,  RGB_GREY },
-    { IDM_RED_BKG,   RGB_RED   },
-    { IDM_GREEN_BKG, RGB_GREEN },
-    { IDM_BLUE_BKG,  RGB_BLUE  },
-  };
-  for (const auto& b : bkgs) {
-    if (GetMenuState(hBkgMenu, b.id, MF_BYCOMMAND) & MF_CHECKED) {
-      g_bkg_color = b.color;
-      break;
-    }
-  }
-
-  // Draw delay
-  const struct { UINT id; unsigned long ms; } delays[] = {
-    { IDM_SLOW,   kSlowSpeed },
-    { IDM_MEDIUM, kMedSpeed },
-    { IDM_FAST,   kHighSpeed },
-    { IDM_HYPER,  kHyperSpeed },
-  };
-  for (const auto& d : delays) {
-    if (GetMenuState(hDelay, d.id, MF_BYCOMMAND) & MF_CHECKED) {
-      g_delay = d.ms;
-      break;
-    }
-  }
-
-  // Monochrome toggle — grey out color bg items if CHECKED in the RC
-  if (GetMenuState(hSettings, IDM_MONOCHROME, MF_BYCOMMAND) & MF_CHECKED) {
-    g_monochrome = true;
-    EnableMenuItem(hBkgMenu, IDM_RED_BKG,   MF_BYCOMMAND | MF_GRAYED);
-    EnableMenuItem(hBkgMenu, IDM_GREEN_BKG, MF_BYCOMMAND | MF_GRAYED);
-    EnableMenuItem(hBkgMenu, IDM_BLUE_BKG,  MF_BYCOMMAND | MF_GRAYED);
-  }
-}
+static constexpr bool debug_console = true;
 
 int APIENTRY wWinMain(HINSTANCE hInstance,
                       HINSTANCE hPrevInstance,
@@ -131,18 +74,24 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
 
   InitializeCriticalSection(&g_paintCS);
 
+  if (debug_console) {
+    if (!AllocConsole()) {
+      return 3;
+    }
+  }
+
   static const LPCWSTR appTitle = APP_NAME;
-  static const DWORD exStyle =
+  static constexpr DWORD exStyle =
 #if _WIN32_WINNT >= 0x0501
       WS_EX_OVERLAPPEDWINDOW | WS_EX_COMPOSITED;
 #else
       WS_EX_OVERLAPPEDWINDOW;
 #endif
-  mainHwnd = CreateWindowExW(exStyle, szClassName, appTitle,
-                         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_SIZEBOX,
+  static constexpr DWORD style =
+      WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SIZEBOX;
+  mainHwnd = CreateWindowExW(exStyle, szClassName, appTitle, style,
                          CW_USEDEFAULT, CW_USEDEFAULT,
-                         640, 480,
-                         nullptr, nullptr, hInstance, nullptr);
+                         CW_WIDTH, CW_HEIGHT, nullptr, nullptr, hInstance, nullptr);
 
   if (mainHwnd == nullptr) {
     return 1;
@@ -196,10 +145,8 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
     case WM_GETMINMAXINFO: {
       // Set the minimum size for the window
       LPMINMAXINFO pMinMaxInfo = reinterpret_cast<LPMINMAXINFO>(lParam);
-      const float xmax = static_cast<float>(GetSystemMetrics(SM_CXMAXIMIZED));
-      const float ymax = static_cast<float>(GetSystemMetrics(SM_CYMAXIMIZED));
-      const int MAXWIDTH  = static_cast<int>(xmax * 0.90f);
-      const int MAXHEIGHT = static_cast<int>(ymax * 0.90f);
+      const int MAXWIDTH  = GetSystemMetrics(SM_CXMAXIMIZED);
+      const int MAXHEIGHT = GetSystemMetrics(SM_CYMAXIMIZED);
       pMinMaxInfo->ptMinTrackSize.x = MINWIDTH;
       pMinMaxInfo->ptMinTrackSize.y = MINHEIGHT;
       pMinMaxInfo->ptMaxTrackSize.x = MAXWIDTH;
@@ -261,6 +208,23 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         case IDM_SAVE_AS:
           SaveClientBitmap(hWnd);
           break;
+        case IDM_SOUND: {
+          if (ToggleSound()) {
+            // Only update check state if toggling sound on/off succeeded.
+            HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
+            CheckMenuItem(hSettings, IDM_SOUND,
+                          MF_BYCOMMAND | (g_playsound ? MF_CHECKED : MF_UNCHECKED));
+          }
+          break;
+        }
+        case IDM_PAUSED: {
+          PauseArt(hWnd);
+          // Reflect the new paused state in the menu check mark.
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
+          CheckMenuItem(hSettings, IDM_PAUSED,
+                        MF_BYCOMMAND | (g_paused ? MF_CHECKED : MF_UNCHECKED));
+          break;
+        }
         case IDM_MONOCHROME: {
           g_monochrome = !g_monochrome;
           HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
@@ -269,7 +233,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
                         MF_BYCOMMAND | (g_monochrome ? MF_CHECKED : MF_UNCHECKED));
           // Grey out or restore the color background options — only white and
           // black are valid background choices in monochrome mode.
-          HMENU hBkgMenu = GetSubMenu(hSettings, 3);
+          HMENU hBkgMenu = GetSubMenu(hSettings, 6);
           const UINT colorState = g_monochrome ? MF_GRAYED : MF_ENABLED;
           EnableMenuItem(hBkgMenu, IDM_RED_BKG,   MF_BYCOMMAND | colorState);
           EnableMenuItem(hBkgMenu, IDM_GREEN_BKG, MF_BYCOMMAND | colorState);
@@ -300,7 +264,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         case IDM_GREEN_BKG:
         case IDM_BLUE_BKG: {
           HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
-          HMENU hBkgMenu  = GetSubMenu(hSettings, 3);
+          HMENU hBkgMenu  = GetSubMenu(hSettings, 6);
           CheckMenuRadioItem(hBkgMenu, IDM_WHITE_BKG, IDM_BLUE_BKG, command, MF_BYCOMMAND);
           switch (command) {
             case IDM_WHITE_BKG: g_bkg_color = RGB_WHITE; break;
@@ -331,7 +295,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         case IDM_FAST:
         case IDM_HYPER: {
           HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
-          HMENU hDelay    = GetSubMenu(hSettings, 4);
+          HMENU hDelay    = GetSubMenu(hSettings, 8);
           CheckMenuRadioItem(hDelay, IDM_SLOW, IDM_HYPER, command, MF_BYCOMMAND);
           switch (command) {
             case IDM_SLOW:   g_delay = 2000UL; break;
@@ -356,7 +320,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           // chosen item and clears the check from all others in the ID range.
           // MF_BYCOMMAND means the IDs are item command values, not positions.
           HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
-          HMENU hShapes   = GetSubMenu(hSettings, 2);
+          HMENU hShapes   = GetSubMenu(hSettings, 3);
           CheckMenuRadioItem(hShapes, IDM_RECTANGLES, IDM_BOTH, command, MF_BYCOMMAND);
           g_both    = (command == IDM_BOTH);
           g_circles = (command == IDM_ELLIPSES);
@@ -466,6 +430,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 }
 
 void ShutDownApp() {
+  StopPlayWav();
   g_running = false;
   // Unblock the art thread so it can observe g_running=false and exit cleanly
   // rather than waiting indefinitely on g_hDrawEvent.
@@ -477,49 +442,13 @@ bool InitApp(HWND hWnd) {
   if (hWnd == nullptr) {
     return false;
   }
-  // All settings (shape mode, delay, background color) are already set by
-  // InitMenuDefaults. Only the fixed concurrent shape count is passed here.
-  const unsigned int concurrent_shapes = 2;
-  if (!ShowArt(concurrent_shapes)) {
+  // All settings (shape mode, delay, background color, concurrent shapes) are already set by
+  // InitMenuDefaults.
+  if (!ShowArt()) {
     MessageBoxW(nullptr, L"ShowArt failed!", L"ShowArt Error", MB_OK | MB_ICONERROR);
     return false;
   }
-  return true;
-}
-
-bool ShowArt(unsigned int num_shapes) {
-  if (num_shapes == 0 || g_delay == 0) {
-    std::wcerr << L"Number of shapes or delay Out of bounds!";
-    return false;
-  }
-  g_num_shapes = num_shapes;
-
-  // Auto-reset event: WaitForSingleObject in the art thread resets it
-  // automatically, so the thread blocks again after each wakeup without
-  // needing an explicit ResetEvent call.
-  g_hDrawEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-  if (g_hDrawEvent == nullptr) return false;
-
-  g_running = true;
-  HANDLE art_thread = CreateThread(nullptr, 0, ArtThread, nullptr, 0, nullptr);
-  if (art_thread == nullptr) {
-    g_running = false;
-    CloseHandle(g_hDrawEvent);
-    g_hDrawEvent = nullptr;
-    return false;
-  }
-  CloseHandle(art_thread);
-
-  // Start the timer that drives drawing. WM_TIMER fires every g_delay ms and
-  // signals g_hDrawEvent to wake the art thread.
-  if (!SetTimer(mainHwnd, TIMER_ART, g_delay, nullptr)) {
-    g_running = false;
-    SetEvent(g_hDrawEvent); // unblock thread so it can exit
-    CloseHandle(g_hDrawEvent);
-    g_hDrawEvent = nullptr;
-    return false;
-  }
-  return true;
+  return PlayWavFile(wav_file);
 }
 
 bool LaunchHelp(HWND hWnd) {

@@ -30,23 +30,27 @@
 #define IDM_BOTH                    207
 
 // Color choices
-#define IDM_MONOCHROME              208 /* Only uses gray tones */
+#define IDM_PAUSED                  208 /* Pause painting */
+#define IDM_MONOCHROME              209 /* Only uses gray tones */
 // Background color choices
-#define IDM_WHITE_BKG               209
-#define IDM_BLACK_BKG               210
-#define IDM_GREY_BKG                211
-#define IDM_RED_BKG                 212
-#define IDM_GREEN_BKG               213
-#define IDM_BLUE_BKG                214
+#define IDM_WHITE_BKG               210
+#define IDM_BLACK_BKG               211
+#define IDM_GREY_BKG                212
+#define IDM_RED_BKG                 213
+#define IDM_GREEN_BKG               214
+#define IDM_BLUE_BKG                215
 
 // Drawing speed
-#define IDM_SLOW                    215
-#define IDM_MEDIUM                  216
-#define IDM_FAST                    217
-#define IDM_HYPER                   218
+#define IDM_SLOW                    216
+#define IDM_MEDIUM                  217
+#define IDM_FAST                    218
+#define IDM_HYPER                   219
+
+// Sound settings
+#define IDM_SOUND                   220
 
 // Dev menu items
-#define IDM_TESTTRAP                219
+#define IDM_TESTTRAP                221
 
 // Buttons
 #define IDC_BUTTON                  300

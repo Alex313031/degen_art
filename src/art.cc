@@ -168,6 +168,62 @@ void RecreateBackBuffer(HWND hWnd, int cx, int cy) {
   LeaveCriticalSection(&g_paintCS);
 }
 
+// Rewrites every pixel in the back buffer that currently equals oldColor so
+// it becomes newColor. Shape pixels are left alone because their RGB values
+// don't match the old background. Uses GetDIBits/SetDIBits to pull the bitmap
+// into a CPU buffer, swap pixels in a tight loop, then push back.
+//
+// COLORREF is stored as 0x00BBGGRR (little-endian DWORD). A 32-bit BI_RGB DIB
+// stores each pixel as BGRA in memory, which reads as 0xAARRGGBB as a DWORD.
+// R and B are swapped between the two representations, so we build the
+// comparison/replacement DWORDs explicitly rather than comparing COLORREFs.
+void RecolorBackground(COLORREF oldColor, COLORREF newColor) {
+  if (oldColor == newColor) return;
+
+  EnterCriticalSection(&g_paintCS);
+  if (g_hdcMem == nullptr || g_hbmMem == nullptr ||
+      cxClient <= 0 || cyClient <= 0) {
+    LeaveCriticalSection(&g_paintCS);
+    return;
+  }
+
+  const int width  = cxClient;
+  const int height = cyClient;
+
+  BITMAPINFOHEADER bi = {};
+  bi.biSize        = sizeof(BITMAPINFOHEADER);
+  bi.biWidth       = width;
+  bi.biHeight      = -height; // negative = top-down (simpler indexing)
+  bi.biPlanes      = 1;
+  bi.biBitCount    = 32;
+  bi.biCompression = BI_RGB;
+
+  std::vector<DWORD> pixels(static_cast<size_t>(width) * height);
+  GetDIBits(g_hdcMem, g_hbmMem, 0, height, pixels.data(),
+            reinterpret_cast<BITMAPINFO*>(&bi), DIB_RGB_COLORS);
+
+  // Convert the two COLORREFs to the DIB's DWORD representation.
+  const DWORD oldPix = (GetRValue(oldColor) << 16) |
+                       (GetGValue(oldColor) << 8)  |
+                        GetBValue(oldColor);
+  const DWORD newPix = (GetRValue(newColor) << 16) |
+                       (GetGValue(newColor) << 8)  |
+                        GetBValue(newColor);
+
+  // Mask off the high (reserved/alpha) byte when comparing so any noise there
+  // doesn't cause false negatives on pixels that should match.
+  for (auto& p : pixels) {
+    if ((p & 0x00FFFFFF) == oldPix) {
+      p = (p & 0xFF000000) | newPix;
+    }
+  }
+
+  SetDIBits(g_hdcMem, g_hbmMem, 0, height, pixels.data(),
+            reinterpret_cast<BITMAPINFO*>(&bi), DIB_RGB_COLORS);
+
+  LeaveCriticalSection(&g_paintCS);
+}
+
 void SetNumShapes(const unsigned int num) {
   if (num > 8) {
     g_num_shapes = 8; // Cap at eight concurrent shapes.

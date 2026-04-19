@@ -104,8 +104,8 @@ BEGIN
         BEGIN
             MENUITEM "1 Threads", IDM_CONC_1
             MENUITEM "2 Threads", IDM_CONC_2
-            MENUITEM "3 Threads", IDM_CONC_3
-            MENUITEM "4 Threads", IDM_CONC_4, CHECKED
+            MENUITEM "3 Threads", IDM_CONC_3, CHECKED
+            MENUITEM "4 Threads", IDM_CONC_4
         END
         MENUITEM SEPARATOR
         POPUP "&Dev"

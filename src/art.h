@@ -24,6 +24,11 @@ DWORD WINAPI ArtThread(LPVOID pvoid);
 // For handling back buffer bitmap for smooth resize
 void RecreateBackBuffer(HWND hWnd, int cx, int cy);
 
+// Swaps every pixel in the back buffer that currently equals oldColor over to
+// newColor, leaving all other (shape) pixels untouched. Used by the background
+// colour menu so the bg can change without erasing the art already painted.
+void RecolorBackground(COLORREF oldColor, COLORREF newColor);
+
 void SetNumShapes(const unsigned int num);
 
 // Starts filling client area with abstract art

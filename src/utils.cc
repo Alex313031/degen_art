@@ -1,7 +1,5 @@
 #include "utils.h"
 
-#include <vector>
-
 #include "art.h"
 #include "globals.h"
 #include "resource.h"
@@ -18,6 +16,7 @@ void InitMenuDefaults(HWND hWnd) {
   HMENU hShapes   = GetSubMenu(hSettings, 3);
   HMENU hBkgMenu  = GetSubMenu(hSettings, 6);
   HMENU hDelay    = GetSubMenu(hSettings, 8);
+  HMENU hConc     = GetSubMenu(hSettings, 10);
 
   // Shape mode — exactly one of the three items must be CHECKED in the RC
   if (GetMenuState(hShapes, IDM_RECTANGLES, MF_BYCOMMAND) & MF_CHECKED) {
@@ -54,6 +53,15 @@ void InitMenuDefaults(HWND hWnd) {
   for (const auto& d : delays) {
     if (GetMenuState(hDelay, d.id, MF_BYCOMMAND) & MF_CHECKED) {
       g_delay = d.ms;
+      break;
+    }
+  }
+
+  // Concurrent shapes — exactly one IDM_CONC_N must be CHECKED in the RC.
+  // IDs are consecutive (IDM_CONC_1..IDM_CONC_4) so we can probe them in a loop.
+  for (UINT id = IDM_CONC_1; id <= IDM_CONC_4; ++id) {
+    if (GetMenuState(hConc, id, MF_BYCOMMAND) & MF_CHECKED) {
+      SetNumShapes((id - IDM_CONC_1) + 1);
       break;
     }
   }

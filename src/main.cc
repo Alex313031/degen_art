@@ -225,6 +225,17 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
                         MF_BYCOMMAND | (g_paused ? MF_CHECKED : MF_UNCHECKED));
           break;
         }
+        case IDM_CONC_1:
+        case IDM_CONC_2:
+        case IDM_CONC_3:
+        case IDM_CONC_4: {
+          // Consecutive IDs let us derive the count directly from the command.
+          SetNumShapes((command - IDM_CONC_1) + 1);
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
+          HMENU hConc     = GetSubMenu(hSettings, 10);
+          CheckMenuRadioItem(hConc, IDM_CONC_1, IDM_CONC_4, command, MF_BYCOMMAND);
+          break;
+        }
         case IDM_MONOCHROME: {
           g_monochrome = !g_monochrome;
           HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
@@ -266,6 +277,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
           HMENU hBkgMenu  = GetSubMenu(hSettings, 6);
           CheckMenuRadioItem(hBkgMenu, IDM_WHITE_BKG, IDM_BLUE_BKG, command, MF_BYCOMMAND);
+          const COLORREF oldColor = g_bkg_color;
           switch (command) {
             case IDM_WHITE_BKG: g_bkg_color = RGB_WHITE; break;
             case IDM_BLACK_BKG: g_bkg_color = RGB_BLACK; break;
@@ -274,16 +286,10 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
             case IDM_GREEN_BKG: g_bkg_color = RGB_GREEN; break;
             default:            g_bkg_color = RGB_BLUE;  break;
           }
-          // Fill the back buffer with the new color immediately so the change
-          // is visible right away rather than only on the next resize.
-          EnterCriticalSection(&g_paintCS);
-          if (g_hdcMem != nullptr && g_hbmMem != nullptr) {
-            RECT rc = { 0, 0, cxClient, cyClient };
-            HBRUSH hBrush = CreateSolidBrush(g_bkg_color);
-            FillRect(g_hdcMem, &rc, hBrush);
-            DeleteObject(hBrush);
-          }
-          LeaveCriticalSection(&g_paintCS);
+          // Swap only the old background pixels over to the new color. Shape
+          // pixels are left untouched, so existing art is preserved across
+          // background changes.
+          RecolorBackground(oldColor, g_bkg_color);
           // Invalidate the whole client area so WM_PAINT blits the updated
           // back buffer to the screen. FALSE = do not erase background first
           // (we handle that in WM_PAINT ourselves).

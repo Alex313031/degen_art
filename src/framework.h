@@ -14,6 +14,7 @@
 #include <iostream>  // Console output and ostringstream
 #include <random>    // Randomization functions
 #include <string>    // Every C++ app needs this right? lol.
+#include <vector>    // Storage, used for Pixel buffers, etc.
 
 #ifdef __cplusplus
  #if __cplusplus < 201103L || !defined(__cplusplus)

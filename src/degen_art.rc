@@ -68,11 +68,17 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "E&xit",    IDM_EXIT
     END
+    POPUP "&Edit"
+    BEGIN
+        MENUITEM "&Draw on Canvas", IDM_DRAW
+        MENUITEM "&Pick Color",     IDM_PICKCOLOR
+    END
     POPUP "&Settings"
     BEGIN
         
         MENUITEM "&Pause Painting", IDM_PAUSED
-        MENUITEM "&Sound?",         IDM_SOUND, CHECKED
+        MENUITEM "&Repaint Now",    IDM_REPAINT
+        MENUITEM "&Play Music?",    IDM_SOUND
         MENUITEM SEPARATOR
         POPUP "&Shapes"
         BEGIN
@@ -81,10 +87,10 @@ BEGIN
             MENUITEM "&Both",       IDM_BOTH, CHECKED
             MENUITEM SEPARATOR
             MENUITEM "Be&ziers",    IDM_BEZIERS
-            MENUITEM "&Lines",      IDM_LINES
+            MENUITEM "&Lines",      IDM_LINES, CHECKED
         END
         MENUITEM SEPARATOR
-        MENUITEM "&MonoChrome",     IDM_MONOCHROME
+        MENUITEM "&Use MonoChrome", IDM_MONOCHROME
         POPUP "&Background Color"
         BEGIN
             MENUITEM "&White", IDM_WHITE_BKG
@@ -94,13 +100,13 @@ BEGIN
             MENUITEM "&Green", IDM_GREEN_BKG
             MENUITEM "&Blue",  IDM_BLUE_BKG
         END
-        MENUITEM SEPARATOR
+        //MENUITEM SEPARATOR
         POPUP "&Speed"
         BEGIN
             MENUITEM "&Slow   (2.0 sec.)", IDM_SLOW
             MENUITEM "&Medium (1.0 sec.)", IDM_MEDIUM
-            MENUITEM "&Fast   (0.5 sec.)", IDM_FAST, CHECKED
-            MENUITEM "&Hyper  (0.25 sec.)", IDM_HYPER
+            MENUITEM "&Fast   (1/2 sec.)", IDM_FAST, CHECKED
+            MENUITEM "&Hyper  (1/4 sec.)", IDM_HYPER
         END
         MENUITEM SEPARATOR
         POPUP "&Concurrent Shapes"
@@ -110,11 +116,11 @@ BEGIN
             MENUITEM "3 Threads", IDM_CONC_3, CHECKED
             MENUITEM "4 Threads", IDM_CONC_4
         END
-        MENUITEM SEPARATOR
-        POPUP "&Dev"
-        BEGIN
-            MENUITEM "&Test Trap", IDM_TESTTRAP, GRAYED
-        END
+    END
+    POPUP "&Dev"
+    BEGIN
+        MENUITEM "&Single Step Drawing", IDM_SINGLE
+        MENUITEM "&Test Trap",           IDM_TESTTRAP
     END
     POPUP "&Help"
     BEGIN
@@ -127,13 +133,17 @@ END
 // Keyboard Accelerators
 IDC_MAIN ACCELERATORS
 BEGIN
-    "?",       IDM_ABOUT, ASCII,   ALT          // "?" key
-    VK_OEM_2,  IDM_ABOUT, VIRTKEY, ALT          // "/" key
-    0x51,      IDM_EXIT,  VIRTKEY, CONTROL      // Ctrl+Q
-    VK_ESCAPE, IDM_EXIT,  VIRTKEY, NOINVERT     // Esc key
-    0x52,      IDM_RECTANGLES, VIRTKEY, CONTROL // Ctrl+R
-    0x4D,      IDM_SOUND, VIRTKEY, NOINVERT     // Ctrl_M
-    VK_SPACE,  IDM_PAUSED, VIRTKEY, NOINVERT    // Spacebar
+    "?",       IDM_ABOUT, ASCII,   ALT          // "?" key About
+    VK_OEM_2,  IDM_ABOUT, VIRTKEY, ALT          // "/" key About
+    0x51,      IDM_EXIT,  VIRTKEY, CONTROL      // Ctrl+Q Exit
+    VK_ESCAPE, IDM_EXIT,  VIRTKEY, NOINVERT     // Esc key Exit
+    0x4D,      IDM_SOUND, VIRTKEY, NOINVERT     // M key Mute
+    0x4D,      IDM_SOUND, VIRTKEY, CONTROL      // Ctrl+M Mute
+    0x50,      IDM_PAUSED, VIRTKEY, NOINVERT    // P key Paused
+    0x50,      IDM_PAUSED, VIRTKEY, CONTROL     // Ctrl+P Paused
+    0x52,      IDM_REPAINT, VIRTKEY, NOINVERT   // R key Repaint
+    0x52,      IDM_REPAINT, VIRTKEY, CONTROL    // Ctrl+R Repaint
+    VK_SPACE,  IDM_SINGLE, VIRTKEY, NOINVERT    // Spacebar Singl-step
 END
 
 // About Dialog Box

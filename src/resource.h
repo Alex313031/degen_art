@@ -56,8 +56,23 @@
 #define IDM_CONC_4                  224
 
 // Whether bezier curves are enabled
-#define IDM_BEZIERS                 225
-#define IDM_LINES                   226 // Lines
+#define IDM_BEZIERS                 225\
+
+// Whether lines are enabled
+#define IDM_LINES                   226
+
+// Forces painting a new canvas, with whatever settings it currently has
+#define IDM_REPAINT                 227
+
+// "Single step" through painting, allows you to run it manually one iteration at a time
+// instead of using timer
+#define IDM_SINGLE                  228
+
+// Pauses shape painting, and allows one to "draw" a line with left click drag, like mspaint.exe
+#define IDM_DRAW                    229
+
+// Global color picker, for various functions
+#define IDM_PICKCOLOR               230
 
 // Dev menu items
 #define IDM_TESTTRAP                250

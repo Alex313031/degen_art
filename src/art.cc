@@ -55,6 +55,8 @@ DWORD WINAPI ArtThread(LPVOID pvoid) {
   // (BLACK, WHITE, GREY) so bezier/line strokes stay tonally consistent with
   // the monochrome shape fills rather than injecting saturated color.
   std::uniform_int_distribution<int> monoDist(0, 2);
+  // Line direction picker: 0=horizontal, 1=vertical, 2=diag "\", 3=diag "/".
+  std::uniform_int_distribution<int> dirDist(0, 3);
   while (g_running) {
     const unsigned int num_shapes = g_num_shapes;
     // Block until WM_TIMER signals g_hDrawEvent. The event is auto-reset, so
@@ -161,14 +163,40 @@ DWORD WINAPI ArtThread(LPVOID pvoid) {
         // current pen position (the last nullptr means we don't care about the
         // previous position); LineTo draws from there to (x1, y1) using the
         // currently selected pen.
+        // Lines are constrained to horizontal, vertical, or the two 45° diagonals.
+        // For the diagonals, a 45° angle means |dx| == |dy|, so we reuse the
+        // same signed delta for both axes (sign flipped for the "/" direction).
         if (use_lines) {
           const COLORREF lineColor = customPalette[g_monochrome ? monoDist(rng) : paletteDist(rng)];
           HPEN hLinesPen = CreatePen(PS_SOLID, 1, lineColor);
           SelectObject(g_hdcMem, hLinesPen);
           const int x0 = xDist(rng);
           const int y0 = yDist(rng);
-          const int x1 = xDist(rng);
-          const int y1 = yDist(rng);
+          int x1 = x0;
+          int y1 = y0;
+          switch (dirDist(rng)) {
+            case 0: // horizontal: y stays, x moves
+              x1 = xDist(rng);
+              break;
+            case 1: // vertical: x stays, y moves
+              y1 = yDist(rng);
+              break;
+            case 2: { // diagonal "\" — dy == dx
+              const int d = xDist(rng) - x0;
+              x1 = x0 + d;
+              y1 = y0 + d;
+              break;
+            }
+            case 3: { // diagonal "/" — dy == -dx
+              const int d = xDist(rng) - x0;
+              x1 = x0 + d;
+              y1 = y0 - d;
+              break;
+            }
+            default:
+              std::wcerr << __FUNC__ << L"distribution out of range!" << std::endl;
+              break;
+          }
           MoveToEx(g_hdcMem, x0, y0, nullptr);
           LineTo(g_hdcMem, x1, y1);
           SelectObject(g_hdcMem, hPen);

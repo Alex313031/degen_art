@@ -12,9 +12,9 @@ volatile bool g_playsound = false;
 // alter a default setting.
 void InitMenuDefaults(HWND hWnd) {
   HMENU hMenu     = GetMenu(hWnd);
-  HMENU hSettings = GetSubMenu(hMenu, 1);
-  HMENU hShapes   = GetSubMenu(hSettings, 3);
-  HMENU hBkgMenu  = GetSubMenu(hSettings, 6);
+  HMENU hSettings = GetSubMenu(hMenu, 2);
+  HMENU hShapes   = GetSubMenu(hSettings, 4);
+  HMENU hBkgMenu  = GetSubMenu(hSettings, 7);
   HMENU hDelay    = GetSubMenu(hSettings, 8);
   HMENU hConc     = GetSubMenu(hSettings, 10);
 
@@ -195,7 +195,7 @@ bool SaveClientBitmap(HWND hWnd) {
   return ok;
 }
 
-inline static void __KillAssembly() {
+inline static void __KillInt3Asm() {
 #ifdef __MINGW32__
   asm("int3\n\t"
       "ud2");
@@ -207,6 +207,35 @@ inline static void __KillAssembly() {
 #endif // __MINGW32__
 }
 
+inline static int __DivZeroAsm() {
+  int retval = 1;
+  // Use assembly to force divide by zero, bypassing compiler protections.
+  // x86 DIV divides EDX:EAX by the source register; a zero divisor raises
+  // #DE (divide error) before the instruction completes, so execution never
+  // reaches the return below. If the trap is ever suppressed, we fall through
+  // and return 0 to signal "failed to crash".
+  //
+  // MinGW path uses GCC AT&T inline asm; MSVC path uses its __asm block
+  // syntax. Both target x86 (MSVC does not support inline __asm on x64).
+#ifdef __MINGW32__
+  asm volatile(
+      "mov $1, %%eax\n\t"    // EAX = 1 (dividend low)
+      "xor %%edx, %%edx\n\t" // EDX = 0 (dividend high)
+      "xor %%ecx, %%ecx\n\t" // ECX = 0 (divisor)
+      "div %%ecx"            // EDX:EAX / ECX -> #DE
+      : : : "eax", "ecx", "edx");
+#else
+  __asm {
+    mov eax, 1   // Dividend low
+    xor edx, edx // Dividend high = 0
+    xor ecx, ecx // Divisor = 0
+    div ecx      // Raises #DE
+  }
+#endif // __MINGW32__
+  retval = 0;
+  return retval; // unreachable; 0 if the trap was somehow suppressed
+}
+
 const int TestTrap(TrapType type) {
   int retval;
   switch (type) {
@@ -215,7 +244,7 @@ const int TestTrap(TrapType type) {
       retval = 0;
       break;
     case ASSEMBLY:
-      __KillAssembly();
+      __KillInt3Asm();
       retval = 0;
       break;
     case EXCEPTION:
@@ -223,7 +252,8 @@ const int TestTrap(TrapType type) {
       retval = 0;
       break;
     case DIV0:
-      retval = 0 / 0;
+      __DivZeroAsm();
+      retval = 0;
       break;
     default:
       std::wcout << L"Invalid trap type! " << std::endl;

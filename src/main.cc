@@ -211,7 +211,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         case IDM_SOUND: {
           if (ToggleSound()) {
             // Only update check state if toggling sound on/off succeeded.
-            HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
+            HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
             CheckMenuItem(hSettings, IDM_SOUND,
                           MF_BYCOMMAND | (g_playsound ? MF_CHECKED : MF_UNCHECKED));
           }
@@ -220,9 +220,47 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         case IDM_PAUSED: {
           PauseArt(hWnd);
           // Reflect the new paused state in the menu check mark.
-          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
           CheckMenuItem(hSettings, IDM_PAUSED,
                         MF_BYCOMMAND | (g_paused ? MF_CHECKED : MF_UNCHECKED));
+          break;
+        }
+        case IDM_SINGLE: {
+          // Single-step the canvas. On first press we transition into the
+          // paused state (KillTimer + check IDM_PAUSED) so the user can see
+          // they're frozen; every press after that just pulses the draw event
+          // once, giving the art thread one iteration before it blocks again.
+          //
+          // To exit single-step mode the user presses IDM_PAUSED, which flips
+          // g_paused back to false and re-arms the timer — normal operation
+          // resumes with no extra logic needed here.
+          if (!g_paused) {
+            PauseArt(hWnd); // toggles g_paused=true and KillTimer
+            HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
+            CheckMenuItem(hSettings, IDM_PAUSED, MF_BYCOMMAND | MF_CHECKED);
+          }
+          // Signal the draw event. Since the timer is off and the event is
+          // auto-reset, the art thread wakes up, runs exactly one iteration,
+          // then blocks again on WaitForSingleObject.
+          if (g_hDrawEvent != nullptr) {
+            SetEvent(g_hDrawEvent);
+          }
+          break;
+        }
+        case IDM_REPAINT: {
+          // Clear the back buffer to the current background color and force a
+          // repaint. All user settings stay intact — the art thread keeps
+          // drawing at the same rate with the same shape/speed/color options,
+          // it just has a fresh canvas to paint onto.
+          EnterCriticalSection(&g_paintCS);
+          if (g_hdcMem != nullptr && g_hbmMem != nullptr) {
+            RECT rc = { 0, 0, cxClient, cyClient };
+            HBRUSH hBrush = CreateSolidBrush(g_bkg_color);
+            FillRect(g_hdcMem, &rc, hBrush);
+            DeleteObject(hBrush);
+          }
+          LeaveCriticalSection(&g_paintCS);
+          InvalidateRect(hWnd, nullptr, FALSE);
           break;
         }
         case IDM_CONC_1:
@@ -231,20 +269,20 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         case IDM_CONC_4: {
           // Consecutive IDs let us derive the count directly from the command.
           SetNumShapes((command - IDM_CONC_1) + 1);
-          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
           HMENU hConc     = GetSubMenu(hSettings, 10);
           CheckMenuRadioItem(hConc, IDM_CONC_1, IDM_CONC_4, command, MF_BYCOMMAND);
           break;
         }
         case IDM_MONOCHROME: {
           g_monochrome = !g_monochrome;
-          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
           // Toggle the check mark on the menu item to show current state.
           CheckMenuItem(hSettings, IDM_MONOCHROME,
                         MF_BYCOMMAND | (g_monochrome ? MF_CHECKED : MF_UNCHECKED));
           // Grey out or restore the color background options — only white and
           // black are valid background choices in monochrome mode.
-          HMENU hBkgMenu = GetSubMenu(hSettings, 6);
+          HMENU hBkgMenu = GetSubMenu(hSettings, 7);
           const UINT colorState = g_monochrome ? MF_GRAYED : MF_ENABLED;
           EnableMenuItem(hBkgMenu, IDM_RED_BKG,   MF_BYCOMMAND | colorState);
           EnableMenuItem(hBkgMenu, IDM_GREEN_BKG, MF_BYCOMMAND | colorState);
@@ -274,8 +312,8 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         case IDM_RED_BKG:
         case IDM_GREEN_BKG:
         case IDM_BLUE_BKG: {
-          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
-          HMENU hBkgMenu  = GetSubMenu(hSettings, 6);
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
+          HMENU hBkgMenu  = GetSubMenu(hSettings, 7);
           CheckMenuRadioItem(hBkgMenu, IDM_WHITE_BKG, IDM_BLUE_BKG, command, MF_BYCOMMAND);
           const COLORREF oldColor = g_bkg_color;
           switch (command) {
@@ -300,7 +338,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         case IDM_MEDIUM:
         case IDM_FAST:
         case IDM_HYPER: {
-          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
           HMENU hDelay    = GetSubMenu(hSettings, 8);
           CheckMenuRadioItem(hDelay, IDM_SLOW, IDM_HYPER, command, MF_BYCOMMAND);
           switch (command) {
@@ -325,8 +363,8 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           // CheckMenuRadioItem places a radio-button style check mark on the
           // chosen item and clears the check from all others in the ID range.
           // MF_BYCOMMAND means the IDs are item command values, not positions.
-          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
-          HMENU hShapes   = GetSubMenu(hSettings, 3);
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
+          HMENU hShapes   = GetSubMenu(hSettings, 4);
           CheckMenuRadioItem(hShapes, IDM_RECTANGLES, IDM_BOTH, command, MF_BYCOMMAND);
           g_both    = (command == IDM_BOTH);
           g_circles = (command == IDM_ELLIPSES);
@@ -336,8 +374,8 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           // Independent toggle (not part of the rectangles/ellipses/both radio
           // group), so a plain check mark rather than CheckMenuRadioItem.
           g_beziers = !g_beziers;
-          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
-          HMENU hShapes   = GetSubMenu(hSettings, 3);
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
+          HMENU hShapes   = GetSubMenu(hSettings, 4);
           CheckMenuItem(hShapes, IDM_BEZIERS,
                         MF_BYCOMMAND | (g_beziers ? MF_CHECKED : MF_UNCHECKED));
           break;
@@ -345,14 +383,14 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         case IDM_LINES: {
           // Same pattern as IDM_BEZIERS — independent toggle inside Shapes.
           g_lines = !g_lines;
-          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
-          HMENU hShapes   = GetSubMenu(hSettings, 3);
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
+          HMENU hShapes   = GetSubMenu(hSettings, 4);
           CheckMenuItem(hShapes, IDM_LINES,
                         MF_BYCOMMAND | (g_lines ? MF_CHECKED : MF_UNCHECKED));
           break;
         }
         case IDM_TESTTRAP:
-          TestTrap(EXCEPTION);
+          TestTrap(DIV0);
           break;
         default:
           return DefWindowProc(hWnd, message, wParam, lParam);
@@ -378,7 +416,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         x = pt.x;
         y = pt.y;
       }
-      HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
+      HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
       TrackPopupMenu(hSettings, TPM_RIGHTBUTTON | TPM_LEFTALIGN | TPM_TOPALIGN,
                      x, y, 0, hWnd, nullptr);
       break;
@@ -473,7 +511,14 @@ bool InitApp(HWND hWnd) {
     MessageBoxW(nullptr, L"ShowArt failed!", L"ShowArt Error", MB_OK | MB_ICONERROR);
     return false;
   }
-  return PlayWavFile(sound_file);
+  // Only start background music if IDM_SOUND is CHECKED in the RC at startup.
+  // Keeps behavior RC-driven: toggling the CHECKED flag in degen_art.rc is the
+  // only change needed to opt in or out of auto-play.
+  HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
+  if (GetMenuState(hSettings, IDM_SOUND, MF_BYCOMMAND) & MF_CHECKED) {
+    return PlayWavFile(sound_file);
+  }
+  return true;
 }
 
 bool LaunchHelp(HWND hWnd) {

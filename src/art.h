@@ -36,7 +36,7 @@ void SetNumShapes(const unsigned int num);
 // Starts filling client area with abstract art
 bool ShowArt();
 
-// Pauses art, for i.e. taking a snapshot, or showing a friend the current state.
-void PauseArt(HWND hWnd);
+// Pauses/resumes painting art, for i.e. taking a snapshot, or showing a friend the current state.
+void TogglePaintArt(HWND hWnd);
 
 #endif // DEGENART_ART_H_

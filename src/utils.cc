@@ -195,6 +195,24 @@ bool SaveClientBitmap(HWND hWnd) {
   return ok;
 }
 
+// Opens the system ChooseColor common dialog and stores the picked color in
+// g_draw_color. The custom-color slot array is kept in a function-static so
+// user-mixed colors persist across multiple invocations of the picker.
+bool PickColor(HWND hWnd) {
+  static COLORREF customColors[16] = {}; // slots the dialog lets the user save
+  CHOOSECOLORW cc = {};
+  cc.lStructSize  = sizeof(cc);
+  cc.hwndOwner    = hWnd;
+  cc.rgbResult    = g_draw_color;              // initialize on current color
+  cc.lpCustColors = customColors;
+  cc.Flags        = CC_FULLOPEN | CC_RGBINIT;  // full picker, respect rgbResult
+  if (!ChooseColorW(&cc)) {
+    return false; // user cancelled or dialog error
+  }
+  g_draw_color = cc.rgbResult;
+  return true;
+}
+
 inline static void __KillInt3Asm() {
 #ifdef __MINGW32__
   asm("int3\n\t"

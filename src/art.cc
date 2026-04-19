@@ -355,7 +355,7 @@ bool ShowArt() {
   return true;
 }
 
-void PauseArt(HWND hWnd) {
+void TogglePaintArt(HWND hWnd) {
   if (hWnd == nullptr) {
     return;
   }
@@ -368,6 +368,9 @@ void PauseArt(HWND hWnd) {
   if (g_paused) {
     KillTimer(hWnd, TIMER_ART);
   } else {
+    if (g_hDrawEvent != nullptr) {
+      SetEvent(g_hDrawEvent); // Draw once immediately when resuming
+    }
     SetTimer(hWnd, TIMER_ART, g_delay, nullptr);
   }
 }

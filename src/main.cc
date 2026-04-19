@@ -40,6 +40,15 @@ HANDLE g_hDrawEvent = nullptr;
 // Color menu. Used when filling the back buffer on resize and on WM_PAINT.
 COLORREF g_bkg_color = RGB_WHITE;
 
+// Free-draw mode state. g_draw_mode is toggled by IDM_DRAW; g_draw_color is
+// the pen color chosen via IDM_PICKCOLOR (black until the user picks one).
+bool g_draw_mode      = false;
+COLORREF g_draw_color = RGB_BLACK;
+
+// Per-stroke state, only meaningful while a left-button drag is in progress.
+static bool s_drawing        = false;
+static POINT s_lastDraw      = {};
+
 static constexpr bool debug_console = true;
 
 int APIENTRY wWinMain(HINSTANCE hInstance,
@@ -208,6 +217,33 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         case IDM_SAVE_AS:
           SaveClientBitmap(hWnd);
           break;
+        case IDM_PICKCOLOR:
+          // Open the color picker; g_draw_color is updated on success.
+          PickColor(hWnd);
+          break;
+        case IDM_DRAW: {
+          // Toggle free-draw mode. While on, left-click + drag paints into the
+          // back buffer instead of moving the window. On activation we also
+          // pause the art thread so the user's strokes aren't overwritten by
+          // new random shapes; exiting does NOT auto-unpause — that requires
+          // IDM_PAUSED, matching how IDM_SINGLE works.
+          g_draw_mode = !g_draw_mode;
+          HMENU hEdit = GetSubMenu(GetMenu(hWnd), 1);
+          CheckMenuItem(hEdit, IDM_DRAW,
+                        MF_BYCOMMAND | (g_draw_mode ? MF_CHECKED : MF_UNCHECKED));
+          if (g_draw_mode && !g_paused) {
+            TogglePaintArt(hWnd);
+            HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
+            CheckMenuItem(hSettings, IDM_PAUSED, MF_BYCOMMAND | MF_CHECKED);
+          }
+          // If a stroke happened to be in progress (unlikely), cancel it so
+          // we don't leak capture when leaving draw mode.
+          if (!g_draw_mode && s_drawing) {
+            s_drawing = false;
+            ReleaseCapture();
+          }
+          break;
+        }
         case IDM_SOUND: {
           if (ToggleSound()) {
             // Only update check state if toggling sound on/off succeeded.
@@ -218,11 +254,23 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           break;
         }
         case IDM_PAUSED: {
-          PauseArt(hWnd);
+          TogglePaintArt(hWnd);
           // Reflect the new paused state in the menu check mark.
           HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
           CheckMenuItem(hSettings, IDM_PAUSED,
                         MF_BYCOMMAND | (g_paused ? MF_CHECKED : MF_UNCHECKED));
+          // Painting and drawing are mutually exclusive — if we just resumed
+          // painting, exit draw mode so the user can't be in both at once.
+          // Also clean up any in-progress stroke so capture isn't stranded.
+          if (!g_paused && g_draw_mode) {
+            g_draw_mode = false;
+            HMENU hEdit = GetSubMenu(GetMenu(hWnd), 1);
+            CheckMenuItem(hEdit, IDM_DRAW, MF_BYCOMMAND | MF_UNCHECKED);
+            if (s_drawing) {
+              s_drawing = false;
+              ReleaseCapture();
+            }
+          }
           break;
         }
         case IDM_SINGLE: {
@@ -235,7 +283,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           // g_paused back to false and re-arms the timer — normal operation
           // resumes with no extra logic needed here.
           if (!g_paused) {
-            PauseArt(hWnd); // toggles g_paused=true and KillTimer
+            TogglePaintArt(hWnd); // toggles g_paused=true and KillTimer
             HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
             CheckMenuItem(hSettings, IDM_PAUSED, MF_BYCOMMAND | MF_CHECKED);
           }
@@ -397,8 +445,34 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       }
     } break;
     case WM_LBUTTONDOWN:
-      ReleaseCapture();
-      SendMessage(hWnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+      if (g_draw_mode) {
+        // Begin a drawing stroke. Capture the mouse so we keep receiving
+        // WM_MOUSEMOVE/WM_LBUTTONUP even if the cursor leaves the client area.
+        s_drawing = true;
+        s_lastDraw.x = GET_X_LPARAM(lParam);
+        s_lastDraw.y = GET_Y_LPARAM(lParam);
+        SetCapture(hWnd);
+        // Drop a single dot at the starting point so a click with no drag is
+        // still visible.
+        EnterCriticalSection(&g_paintCS);
+        if (g_hdcMem != nullptr && g_hbmMem != nullptr) {
+          SetPixel(g_hdcMem, s_lastDraw.x, s_lastDraw.y, g_draw_color);
+        }
+        LeaveCriticalSection(&g_paintCS);
+        RECT rc = { s_lastDraw.x, s_lastDraw.y,
+                    s_lastDraw.x + 1, s_lastDraw.y + 1 };
+        InvalidateRect(hWnd, &rc, FALSE);
+      } else {
+        // Default behavior: left-click drag moves the window.
+        ReleaseCapture();
+        SendMessage(hWnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+      }
+      break;
+    case WM_LBUTTONUP:
+      if (s_drawing) {
+        s_drawing = false;
+        ReleaseCapture();
+      }
       break;
     case WM_CONTEXTMENU: {
       // TrackPopupMenu is called with the actual Settings submenu handle from
@@ -431,6 +505,38 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       break;
     }
     case WM_MOUSEMOVE: {
+      if (s_drawing) {
+        // Continue a drawing stroke. Draw a 1-pixel line from the last point
+        // to the current cursor position in the back buffer, then invalidate
+        // just the bounding rect of the segment so WM_PAINT blits a tight
+        // region instead of the whole window.
+        const int x = GET_X_LPARAM(lParam);
+        const int y = GET_Y_LPARAM(lParam);
+        EnterCriticalSection(&g_paintCS);
+        if (g_hdcMem != nullptr && g_hbmMem != nullptr) {
+          HPEN hDrawPen = CreatePen(PS_SOLID, 1, g_draw_color);
+          HPEN hOld = reinterpret_cast<HPEN>(SelectObject(g_hdcMem, hDrawPen));
+          MoveToEx(g_hdcMem, s_lastDraw.x, s_lastDraw.y, nullptr);
+          LineTo(g_hdcMem, x, y);
+          SelectObject(g_hdcMem, hOld);
+          DeleteObject(hDrawPen);
+        }
+        LeaveCriticalSection(&g_paintCS);
+        // Pad the invalidated rect by 1 pixel on each side to cover the pen's
+        // full width and any anti-aliased edges.
+        // POINT stores LONG, the mouse coords are int — force the template
+        // parameter so std::min/std::max don't try to deduce mismatched types.
+        RECT rc = {
+          std::min<LONG>(s_lastDraw.x, x) - 1,
+          std::min<LONG>(s_lastDraw.y, y) - 1,
+          std::max<LONG>(s_lastDraw.x, x) + 2,
+          std::max<LONG>(s_lastDraw.y, y) + 2,
+        };
+        InvalidateRect(hWnd, &rc, FALSE);
+        s_lastDraw.x = x;
+        s_lastDraw.y = y;
+        break;
+      }
       if (s_resizing) {
         POINT pt;
         GetCursorPos(&pt);
@@ -448,6 +554,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       break;
     case WM_CAPTURECHANGED:
       s_resizing = false;
+      s_drawing  = false; // capture lost (e.g. Alt+Tab), end the stroke cleanly
       break;
     case WM_HELP:
       LaunchHelp(hWnd);

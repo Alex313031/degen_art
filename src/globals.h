@@ -18,4 +18,7 @@ extern HANDLE g_hDrawEvent; // Signalled by WM_TIMER each tick to wake the art t
 
 extern COLORREF g_bkg_color; // Current background color, changed via the Background Color menu
 
+extern bool g_draw_mode;      // True when IDM_DRAW is active — left-click paints instead of moving window
+extern COLORREF g_draw_color; // Pen color used while in draw mode; set by IDM_PICKCOLOR
+
 #endif // DEGENART_GLOBALS_H_

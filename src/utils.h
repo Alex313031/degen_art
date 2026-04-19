@@ -60,4 +60,7 @@ bool StopPlayWav();
 // Starts and stops playing sound at will.
 bool ToggleSound();
 
+// Common controls color picker helper
+bool PickColor(HWND hWnd);
+
 #endif // DEGENART_UTILS_H_

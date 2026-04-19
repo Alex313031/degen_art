@@ -5,7 +5,7 @@
 
 #include "debugbreak.h" // Portable trap functions
 
-static inline const std::wstring wav_file = L"watersky.wav"; // Sound to play
+inline const std::wstring sound_file = L"watersky.wav"; // Sound to play
 
 extern volatile bool g_playsound;
 

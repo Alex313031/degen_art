@@ -49,8 +49,14 @@
 // Sound settings
 #define IDM_SOUND                   220
 
+// Threads (concurrently drawn shapes) control
+#define IDM_CONC_1                  221
+#define IDM_CONC_2                  222
+#define IDM_CONC_3                  223
+#define IDM_CONC_4                  224
+
 // Dev menu items
-#define IDM_TESTTRAP                221
+#define IDM_TESTTRAP                250
 
 // Buttons
 #define IDC_BUTTON                  300

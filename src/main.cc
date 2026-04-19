@@ -448,7 +448,7 @@ bool InitApp(HWND hWnd) {
     MessageBoxW(nullptr, L"ShowArt failed!", L"ShowArt Error", MB_OK | MB_ICONERROR);
     return false;
   }
-  return PlayWavFile(wav_file);
+  return PlayWavFile(sound_file);
 }
 
 bool LaunchHelp(HWND hWnd) {

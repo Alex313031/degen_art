@@ -223,10 +223,13 @@ bool PlayWavFile(const std::wstring& wav_file) {
     return false;
   }
   static const DWORD playFlags = SND_FILENAME | SND_ASYNC | SND_LOOP;
-  const std::wstring sound_file = cwd + wav_file;
+  const std::wstring file = cwd + wav_file;
   const bool success = PlaySoundW(sound_file.c_str(), nullptr, playFlags);
   if (success) {
     g_playsound = true;
+  } else {
+    std::wcerr << L"Failed to play sound " << wav_file << std::endl;
+    g_playsound = false;
   }
   return success;
 }
@@ -235,6 +238,8 @@ bool StopPlayWav() {
   const bool success = PlaySoundW(nullptr, nullptr, 0);
   if (success) {
     g_playsound = false;
+  } else {
+    MessageBoxW(mainHwnd, L"Failed to stop playing sound!", L"PlaySound Error", MB_OK | MB_ICONERROR);
   }
   return success;
 }
@@ -243,6 +248,6 @@ bool ToggleSound() {
   if (g_playsound) {
     return StopPlayWav();
   } else {
-    return PlayWavFile(wav_file);
+    return PlayWavFile(sound_file);
   }  
 }

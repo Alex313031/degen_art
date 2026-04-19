@@ -92,13 +92,22 @@ BEGIN
             MENUITEM "&Blue",  IDM_BLUE_BKG
         END
         MENUITEM SEPARATOR
-        POPUP "&Delay"
+        POPUP "&Speed"
         BEGIN
             MENUITEM "&Slow   (2.0 sec.)", IDM_SLOW
             MENUITEM "&Medium (1.0 sec.)", IDM_MEDIUM
             MENUITEM "&Fast   (0.5 sec.)", IDM_FAST, CHECKED
             MENUITEM "&Hyper  (0.25 sec.)", IDM_HYPER
         END
+        MENUITEM SEPARATOR
+        POPUP "&Concurrent Shapes"
+        BEGIN
+            MENUITEM "1 Threads", IDM_CONC_1
+            MENUITEM "2 Threads", IDM_CONC_2
+            MENUITEM "3 Threads", IDM_CONC_3
+            MENUITEM "4 Threads", IDM_CONC_4, CHECKED
+        END
+        MENUITEM SEPARATOR
         POPUP "&Dev"
         BEGIN
             MENUITEM "&Test Trap", IDM_TESTTRAP, GRAYED
@@ -120,6 +129,8 @@ BEGIN
     0x51,      IDM_EXIT,  VIRTKEY, CONTROL      // Ctrl+Q
     VK_ESCAPE, IDM_EXIT,  VIRTKEY, NOINVERT     // Esc key
     0x52,      IDM_RECTANGLES, VIRTKEY, CONTROL // Ctrl+R
+    0x4D,      IDM_SOUND, VIRTKEY, NOINVERT     // Ctrl_M
+    VK_SPACE,  IDM_PAUSED, VIRTKEY, NOINVERT    // Spacebar
 END
 
 // About Dialog Box

@@ -27,6 +27,14 @@ void InitMenuDefaults(HWND hWnd) {
     g_circles = false; g_both = true; // IDM_BOTH
   }
 
+  // Beziers are an independent toggle (not part of the radio group above).
+  if (GetMenuState(hShapes, IDM_BEZIERS, MF_BYCOMMAND) & MF_CHECKED) {
+    g_beziers = true;
+  }
+  if (GetMenuState(hShapes, IDM_LINES, MF_BYCOMMAND) & MF_CHECKED) {
+    g_lines = true;
+  }
+
   // Background color
   const struct { UINT id; COLORREF color; } bkgs[] = {
     { IDM_WHITE_BKG, RGB_WHITE },

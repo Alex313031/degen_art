@@ -55,6 +55,10 @@
 #define IDM_CONC_3                  223
 #define IDM_CONC_4                  224
 
+// Whether bezier curves are enabled
+#define IDM_BEZIERS                 225
+#define IDM_LINES                   226 // Lines
+
 // Dev menu items
 #define IDM_TESTTRAP                250
 

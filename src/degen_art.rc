@@ -79,6 +79,9 @@ BEGIN
             MENUITEM "&Rectangles", IDM_RECTANGLES
             MENUITEM "&Ellipses",   IDM_ELLIPSES
             MENUITEM "&Both",       IDM_BOTH, CHECKED
+            MENUITEM SEPARATOR
+            MENUITEM "Be&ziers",    IDM_BEZIERS
+            MENUITEM "&Lines",      IDM_LINES
         END
         MENUITEM SEPARATOR
         MENUITEM "&MonoChrome",     IDM_MONOCHROME

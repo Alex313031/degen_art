@@ -3,8 +3,10 @@
 
 #include "framework.h"
 
-extern bool g_circles;
-extern bool g_both;
+extern volatile bool g_circles;
+extern volatile bool g_beziers;
+extern volatile bool g_lines;
+extern volatile bool g_both;
 
 extern bool g_monochrome;
 

@@ -332,6 +332,25 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           g_circles = (command == IDM_ELLIPSES);
           break;
         }
+        case IDM_BEZIERS: {
+          // Independent toggle (not part of the rectangles/ellipses/both radio
+          // group), so a plain check mark rather than CheckMenuRadioItem.
+          g_beziers = !g_beziers;
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
+          HMENU hShapes   = GetSubMenu(hSettings, 3);
+          CheckMenuItem(hShapes, IDM_BEZIERS,
+                        MF_BYCOMMAND | (g_beziers ? MF_CHECKED : MF_UNCHECKED));
+          break;
+        }
+        case IDM_LINES: {
+          // Same pattern as IDM_BEZIERS — independent toggle inside Shapes.
+          g_lines = !g_lines;
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 1);
+          HMENU hShapes   = GetSubMenu(hSettings, 3);
+          CheckMenuItem(hShapes, IDM_LINES,
+                        MF_BYCOMMAND | (g_lines ? MF_CHECKED : MF_UNCHECKED));
+          break;
+        }
         case IDM_TESTTRAP:
           TestTrap(EXCEPTION);
           break;

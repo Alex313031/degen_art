@@ -4,20 +4,19 @@
 #include "resource.h"
 #include "utils.h"
 
-volatile bool g_running  = false;
-volatile bool g_paused   = false;
+volatile bool g_running = false; // Global art threads running state
+volatile bool g_paused  = false; // Affects g_running, used by IDM_PAUSED
 
-bool g_circles = false;
+volatile bool g_circles = false; // IDM_ELLIPSES checked in the .rc menu.
+volatile bool g_beziers = false; // IDM_BEZIERS checked in the .rc menu.
+volatile bool g_lines   = false; // IDM_LINES checked in the .rc menu.
+volatile bool g_both    = true;  // IDM_BOTH default checked in the .rc menu.
 
-// When true, each shape independently coin-tosses between ellipse and rectangle.
-// Matches the IDM_BOTH default checked in the menu resource.
-bool g_both = true;
+bool g_monochrome = false; // Whether monochrome colors only is enabled
 
-bool g_monochrome = false;
+volatile UINT g_num_shapes = 1; // Initialize to 1, in case something goes wrong at least we draw 1 shape
 
-volatile UINT g_num_shapes = 1;
-
-unsigned long g_delay = 500UL;
+unsigned long g_delay = 500UL; // Default to same as .rc file (IDM_FAST)
 
 DWORD WINAPI ArtThread(LPVOID pvoid) {
   UNREFERENCED_PARAMETER(pvoid);
@@ -42,6 +41,20 @@ DWORD WINAPI ArtThread(LPVOID pvoid) {
   std::uniform_int_distribution<int> colorDist(0, 255);
   // Used for the "both" mode coin toss — each shape independently picks a type.
   std::uniform_int_distribution<int> coinDist(0, 1);
+  std::uniform_int_distribution<int> diceDist(0, 5);
+  // Fixed palette for bezier or lines strokes — a small set of saturated colors looks
+  // cleaner against the busy random shape background than fully random hues.
+  static const COLORREF customPalette[] = {
+    RGB_BLACK,  RGB_WHITE, RGB_GREY,
+    RGB_RED,    RGB_GREEN, RGB_BLUE,
+    RGB_YELLOW, RGB_CYAN,  RGB_MAGENTA,
+  };
+  std::uniform_int_distribution<int> paletteDist(
+      0, static_cast<int>(sizeof(customPalette) / sizeof(customPalette[0])) - 1);
+  // In monochrome mode we restrict the palette to the first three entries
+  // (BLACK, WHITE, GREY) so bezier/line strokes stay tonally consistent with
+  // the monochrome shape fills rather than injecting saturated color.
+  std::uniform_int_distribution<int> monoDist(0, 2);
   while (g_running) {
     const unsigned int num_shapes = g_num_shapes;
     // Block until WM_TIMER signals g_hDrawEvent. The event is auto-reset, so
@@ -105,6 +118,10 @@ DWORD WINAPI ArtThread(LPVOID pvoid) {
         // - IDM_ELLIPSES:   g_circles=true,  g_both=false → always ellipse
         // - IDM_RECTANGLES: g_circles=false, g_both=false → always rectangle
         const bool use_ellipse = g_both ? (coinDist(rng) != 0) : g_circles;
+        // Only use beziers if enabled, with a 1-in-6 chance per shape.
+        // diceDist yields 0..5 uniformly, so matching 0 gives exactly 1/6.
+        const bool use_beziers = g_beziers ? (diceDist(rng) == 0) : false;
+        const bool use_lines   = g_lines   ? (diceDist(rng) == 0) : false;
         // Draw the shape into the back buffer (g_hdcMem), not the screen.
         // min/max ensure the coordinates are top-left/bottom-right regardless
         // of which random value ended up larger.
@@ -114,6 +131,48 @@ DWORD WINAPI ArtThread(LPVOID pvoid) {
         } else {
           Rectangle(g_hdcMem, std::min(xLeft, xRight), std::min(yTop, yBottom),
                     std::max(xLeft, xRight), std::max(yTop, yBottom));
+        }
+        // Now draw a random bezier on top, if this iteration rolled one in.
+        // A single cubic Bezier is defined by 4 points:
+        //   [0] = start, [1] = first control, [2] = second control, [3] = end.
+        // All four are drawn from xDist/yDist so they stay inside the client
+        // area. The bezier pen's color is chosen from a small fixed palette
+        // so curves stand out cleanly instead of disappearing into the busy
+        // random-color shape field below them.
+        if (use_beziers) {
+          const COLORREF bezColor = customPalette[g_monochrome ? monoDist(rng) : paletteDist(rng)];
+          HPEN hBezierPen = CreatePen(PS_SOLID, 1, bezColor);
+          SelectObject(g_hdcMem, hBezierPen);
+          const POINT pointArray[4] = {
+            { xDist(rng), yDist(rng) },
+            { xDist(rng), yDist(rng) },
+            { xDist(rng), yDist(rng) },
+            { xDist(rng), yDist(rng) },
+          };
+          PolyBezier(g_hdcMem, pointArray, static_cast<DWORD>(4));
+          // Put the outline pen back so the cleanup below can delete the
+          // bezier pen safely (a pen currently selected into a DC must not be
+          // passed to DeleteObject).
+          SelectObject(g_hdcMem, hPen);
+          DeleteObject(hBezierPen);
+        }
+        // Draw a random straight line on top, same 1-in-6 gating as beziers.
+        // Lines need just a start and end point. MoveToEx updates the DC's
+        // current pen position (the last nullptr means we don't care about the
+        // previous position); LineTo draws from there to (x1, y1) using the
+        // currently selected pen.
+        if (use_lines) {
+          const COLORREF lineColor = customPalette[g_monochrome ? monoDist(rng) : paletteDist(rng)];
+          HPEN hLinesPen = CreatePen(PS_SOLID, 1, lineColor);
+          SelectObject(g_hdcMem, hLinesPen);
+          const int x0 = xDist(rng);
+          const int y0 = yDist(rng);
+          const int x1 = xDist(rng);
+          const int y1 = yDist(rng);
+          MoveToEx(g_hdcMem, x0, y0, nullptr);
+          LineTo(g_hdcMem, x1, y1);
+          SelectObject(g_hdcMem, hPen);
+          DeleteObject(hLinesPen);
         }
         // Restore the stock pen before deleting ours. A GDI object must not be
         // deleted while it is still selected into a DC.

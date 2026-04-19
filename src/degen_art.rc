@@ -5,9 +5,7 @@
 #define APSTUDIO_READONLY_SYMBOLS
 // Generated from the TEXTINCLUDE resource.
 
-#ifndef APSTUDIO_INVOKED
 #include "version.h"
-#endif // APSTUDIO_INVOKED
 
 #define APSTUDIO_HIDDEN_SYMBOLS
 #include <windows.h>

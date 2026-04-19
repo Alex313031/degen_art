@@ -3,6 +3,8 @@
 
 #include "framework.h"
 
+#include <logging.h>
+
 #include "debugbreak.h" // Portable trap functions
 
 inline const std::wstring sound_file = L"watersky.wav"; // Sound to play
@@ -62,5 +64,12 @@ bool ToggleSound();
 
 // Common controls color picker helper
 bool PickColor(HWND hWnd);
+
+// Helper functions for MessageBoxW
+bool InfoBox(HWND hWnd, const std::wstring& title, const std::wstring& message);
+
+bool WarnBox(HWND hWnd, const std::wstring& title, const std::wstring& message);
+
+bool ErrorBox(HWND hWnd, const std::wstring& title, const std::wstring& message);
 
 #endif // DEGENART_UTILS_H_

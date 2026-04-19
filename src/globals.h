@@ -21,4 +21,6 @@ extern COLORREF g_bkg_color; // Current background color, changed via the Backgr
 extern bool g_draw_mode;      // True when IDM_DRAW is active — left-click paints instead of moving window
 extern COLORREF g_draw_color; // Pen color used while in draw mode; set by IDM_PICKCOLOR
 
+extern int g_toolbarHeight;   // Height of the top toolbar in pixels; 0 if none. Art canvas lives below it.
+
 #endif // DEGENART_GLOBALS_H_

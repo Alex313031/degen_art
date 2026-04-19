@@ -1,7 +1,12 @@
 # Copyright 2026 Alex313031
 
 executable("degen_art") {
-  configs += [ ":degen_art_config", ]
+  configs += [
+    ":degen_art_config",
+    "src/logging:dlogger_config",
+  ]
+  precompiled_header = "src/framework.h"
+  precompiled_source = "src/pch.cc"
   sources = [
     "src/art.cc",
     "src/art.h",
@@ -15,6 +20,9 @@ executable("degen_art") {
     "src/utils.cc",
     "src/utils.h",
     "src/version.h",
+  ]
+  deps = [
+    "src/logging:dlogger",
   ]
 }
 

@@ -194,7 +194,7 @@ DWORD WINAPI ArtThread(LPVOID pvoid) {
               break;
             }
             default:
-              std::wcerr << __FUNC__ << L"distribution out of range!" << std::endl;
+              LOG(ERROR) << L"distribution out of range!";
               break;
           }
           MoveToEx(g_hdcMem, x0, y0, nullptr);
@@ -212,7 +212,9 @@ DWORD WINAPI ArtThread(LPVOID pvoid) {
       // (SRCCOPY) of the entire back buffer onto the window's DC. GetDC/ReleaseDC
       // bracket all direct drawing to the window outside of WM_PAINT.
       hdc = GetDC(mainHwnd);
-      BitBlt(hdc, 0, 0, cxClient, cyClient, g_hdcMem, 0, 0, SRCCOPY);
+      // Offset destination by g_toolbarHeight so the canvas sits below the
+      // toolbar. Back buffer coords remain art-local (start at 0,0).
+      BitBlt(hdc, 0, g_toolbarHeight, cxClient, cyClient, g_hdcMem, 0, 0, SRCCOPY);
       ReleaseDC(mainHwnd, hdc);
     }
     LeaveCriticalSection(&g_paintCS);
@@ -323,7 +325,7 @@ void SetNumShapes(const unsigned int num) {
 
 bool ShowArt() {
   if (g_num_shapes == 0 || g_delay == 0) {
-    std::wcerr << L"Number of shapes or delay Out of bounds!";
+    LOG(ERROR) << L"Number of shapes or delay Out of bounds!";
     return false;
   }
 

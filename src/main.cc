@@ -49,7 +49,117 @@ COLORREF g_draw_color = RGB_BLACK;
 static bool s_drawing        = false;
 static POINT s_lastDraw      = {};
 
-static constexpr bool debug_console = true;
+// Toolbar state. g_hToolbar is the child window handle; g_toolbarHeight is
+// measured after creation so the rest of the app knows how much vertical
+// space the art canvas needs to avoid.
+static HWND g_hToolbar = nullptr;
+int g_toolbarHeight    = 0;
+
+// Saved original toolbar WndProc so our subclass can chain through to it.
+static WNDPROC s_origToolbarProc = nullptr;
+
+// Minimal subclass for the toolbar: on WM_ERASEBKGND, fill the client area
+// with the standard 3D face color. On real Windows this is redundant because
+// the opaque toolbar paints its own background during WM_PAINT anyway, but
+// Wine's toolbar implementation does not reliably fill the background, so
+// the control comes out transparent. Painting it ourselves here covers Wine
+// without changing anything visible on real Windows.
+static LRESULT CALLBACK ToolbarSubclassProc(HWND hWnd, UINT msg,
+                                            WPARAM wParam, LPARAM lParam) {
+  if (msg == WM_ERASEBKGND) {
+    HDC hdc = reinterpret_cast<HDC>(wParam);
+    RECT rc;
+    GetClientRect(hWnd, &rc);
+    FillRect(hdc, &rc, reinterpret_cast<HBRUSH>(COLOR_3DFACE + 1));
+    return TRUE;
+  }
+  return CallWindowProc(s_origToolbarProc, hWnd, msg, wParam, lParam);
+}
+
+// Creates the application's top toolbar as a child of hParent.
+//
+// A toolbar in Win32 is its own child window of class TOOLBARCLASSNAME
+// (provided by the Common Controls DLL). We populate it with buttons that
+// pull their images from a "bitmap strip" — a single wide bitmap where each
+// button's image is a fixed-size slice. The Common Controls DLL ships with
+// standard strips (new, open, save, cut/copy/paste, etc.) that any app can
+// use without shipping its own icon files. We use IDB_STD_SMALL_COLOR and
+// pick STD_FILESAVE (the floppy disk icon) from it.
+//
+// Button clicks arrive as WM_COMMAND messages to the parent, with wParam
+// low-word set to the button's idCommand. Here we map the save button to
+// IDM_SAVE_AS so it shares the existing menu handler — no duplicate code.
+static HWND CreateAppToolbar(HWND hParent) {
+  // Styles note — we deliberately do NOT use TBSTYLE_FLAT here. Per MSDN it
+  // makes the toolbar transparent, meaning the parent is responsible for
+  // painting the background. With WS_CLIPCHILDREN on our main window (which
+  // we need to keep parent painting out of the toolbar's rect), there is
+  // nothing to paint the background, so the area renders as whatever is in
+  // the surface — desktop on Win2000, black on XP+ under DWM. Without
+  // TBSTYLE_FLAT the toolbar is opaque: it paints its own background, which
+  // the theme engine on XP+ handles automatically (themed raised look), and
+  // Win2000 falls back to classic 3D raised shading.
+  //
+  // TBSTYLE_TOOLTIPS — show tooltip popups when the cursor hovers.
+  // CCS_TOP is the default (toolbar docks to top of parent) so we omit it.
+  HWND hTB = CreateWindowExW(
+      WS_EX_WINDOWEDGE, TOOLBARCLASSNAME, nullptr,
+      WS_CHILD | TBSTYLE_TOOLTIPS,
+      0, 0, CW_USEDEFAULT, CW_USEDEFAULT,
+      hParent, nullptr, g_hInstance, nullptr);
+  if (hTB == nullptr) {
+    return nullptr;
+  }
+
+  // Load the standard small-icon bitmap strip out of the Common Controls DLL.
+  // HINST_COMMCTRL is a special "instance" sentinel meaning "look in comctl32".
+  // After this call, the strip's images are available to this toolbar, and
+  // iBitmap values like STD_FILESAVE index directly into it.
+  TBADDBITMAP tbab = {};
+  tbab.hInst = HINST_COMMCTRL;
+  tbab.nID   = IDB_STD_SMALL_COLOR;
+  SendMessage(hTB, TB_ADDBITMAP, 0, reinterpret_cast<LPARAM>(&tbab));
+
+  // Define the buttons. Each TBBUTTON entry has:
+  //   iBitmap   — index into the loaded bitmap strip (STD_FILESAVE = floppy)
+  //   idCommand — the WM_COMMAND id sent when the button is clicked
+  //   fsState   — initial state flags (TBSTATE_ENABLED makes it clickable)
+  //   fsStyle   — button kind (BTNS_BUTTON is a plain push button)
+  //   dwData    — app-defined extra data we don't need
+  //   iString   — tooltip/label string index; -1 means no text label here
+  TBBUTTON tbButtons[1] = {};
+  tbButtons[0].iBitmap   = STD_FILESAVE;
+  tbButtons[0].idCommand = IDM_SAVE_AS;
+  tbButtons[0].fsState   = TBSTATE_ENABLED;
+  tbButtons[0].fsStyle   = TBSTYLE_BUTTON;
+  tbButtons[0].iString   = reinterpret_cast<INT_PTR>(L"Save As");
+
+  // Toolbars exist in multiple versions across Common Controls releases. This
+  // tells the control which TBBUTTON layout we compiled against so it can
+  // adapt if this binary runs against a different DLL version.
+  SendMessage(hTB, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+  // Add buttons
+  SendMessage(hTB, TB_ADDBUTTONS,
+              sizeof(tbButtons) / sizeof(tbButtons[0]),
+              reinterpret_cast<LPARAM>(tbButtons));
+
+  // Install the subclass for Wine compatibility (see ToolbarSubclassProc).
+  // Real Windows ignores this because its WM_PAINT paints over what our
+  // WM_ERASEBKGND filled, but Wine needs this to avoid a transparent bar.
+  s_origToolbarProc = reinterpret_cast<WNDPROC>(
+      SetWindowLongPtr(hTB, GWLP_WNDPROC,
+                       reinterpret_cast<LONG_PTR>(ToolbarSubclassProc)));
+
+  // TB_AUTOSIZE tells the toolbar to re-measure itself based on its buttons
+  // and the parent's width. Required after adding/removing buttons and also
+  // on every parent resize (we call it again from WM_SIZE below).
+  SendMessage(hTB, TB_AUTOSIZE, 0, 0);
+
+  // Buttons and layout are in place; show the toolbar now.
+  ShowWindow(hTB, SW_SHOW);
+
+  return hTB;
+}
 
 int APIENTRY wWinMain(HINSTANCE hInstance,
                       HINSTANCE hPrevInstance,
@@ -57,8 +167,13 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
                       int iCmdShow) {
   UNREFERENCED_PARAMETER(hPrevInstance);
   g_hInstance = hInstance;
-  InitCommonControls();
+  // Initialize common controls
+  INITCOMMONCONTROLSEX icex;
+  icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
+  icex.dwICC  = ICC_STANDARD_CLASSES | ICC_WIN95_CLASSES;
+  InitCommonControlsEx(&icex);
 
+  static const LPCWSTR appTitle = APP_NAME;
   static const LPCWSTR szClassName = MAIN_WNDCLASS;
 
   WNDCLASSEXW wndclass;
@@ -76,28 +191,44 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
   wndclass.hIconSm       = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
   if (!RegisterClassExW(&wndclass)) {
-    MessageBoxW(nullptr, L"This program requires Windows NT!",
-               L"", MB_OK | MB_ICONERROR);
+    ErrorBox(nullptr, L"RegisterClassEx Error", L"This program requires Windows NT!");
     return 2;
-  }
-
-  InitializeCriticalSection(&g_paintCS);
-
-  if (debug_console) {
-    if (!AllocConsole()) {
+  } else {
+    static constexpr bool debug_console = false;
+    // Set up our logging using mini_logger library.
+    const logging::LogDest kLogSink = debug_console ? logging::LOG_TO_ALL : logging::LOG_NONE;
+    const std::wstring kLogFile(L"degen_art.log");
+    logging::LogInitSettings LoggingSettings;
+    LoggingSettings.log_sink          = kLogSink;
+    LoggingSettings.logfile_name      = kLogFile;
+    LoggingSettings.app_name          = appTitle;
+    LoggingSettings.show_func_sigs    = false;
+    LoggingSettings.show_line_numbers = false;
+    LoggingSettings.show_time         = false;
+    LoggingSettings.full_prefix_level = LOG_ERROR;
+    const bool init_logging           = logging::InitLogging(g_hInstance, LoggingSettings);
+    if (init_logging) {
+      logging::SetIsDCheck(is_dcheck);
+      LOG(INFO) << L"---- Welcome to Degenerative Art Win32 ----";
+    } else {
+      ErrorBox(nullptr, L"Logging Initialization Failure", L"InitLogging failed!");
       return 3;
     }
   }
 
-  static const LPCWSTR appTitle = APP_NAME;
+  InitializeCriticalSection(&g_paintCS);
+  
   static constexpr DWORD exStyle =
 #if _WIN32_WINNT >= 0x0501
       WS_EX_OVERLAPPEDWINDOW | WS_EX_COMPOSITED;
 #else
       WS_EX_OVERLAPPEDWINDOW;
 #endif
+  // WS_CLIPCHILDREN keeps the parent's painting out of child windows' regions
+  // (here: the toolbar). The toolbar is responsible for drawing itself; the
+  // OS handles its theming (themed on XP+, classic on Win2000).
   static constexpr DWORD style =
-      WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SIZEBOX;
+      WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SIZEBOX | WS_CLIPCHILDREN;
   mainHwnd = CreateWindowExW(exStyle, szClassName, appTitle, style,
                          CW_USEDEFAULT, CW_USEDEFAULT,
                          CW_WIDTH, CW_HEIGHT, nullptr, nullptr, hInstance, nullptr);
@@ -134,6 +265,16 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       // bitmap; RecreateBackBuffer (called on the first WM_SIZE) replaces it
       // with a full-size bitmap matched to the window.
       g_hdcMem = CreateCompatibleDC(nullptr);
+      // Build the toolbar before InitMenuDefaults so any future toolbar-driven
+      // default reading could work, and before InitApp so cyClient computed in
+      // the first WM_SIZE already excludes the toolbar height.
+      g_hToolbar = CreateAppToolbar(hWnd);
+      if (g_hToolbar != nullptr) {
+        // GetWindowRect returns screen coords; we only need the height.
+        RECT tbRect;
+        GetWindowRect(g_hToolbar, &tbRect);
+        g_toolbarHeight = tbRect.bottom - tbRect.top;
+      }
       InitMenuDefaults(hWnd);
       InitApp(hWnd);
       break;
@@ -168,11 +309,10 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       // drawn to the screen until EndPaint is called.
       PAINTSTRUCT ps;
       HDC hdc = BeginPaint(hWnd, &ps);
-      // Fill the dirty region with the background color first. This covers two
-      // cases:
-      //   1. The back buffer is not ready yet (startup).
-      //   2. The window grew and ps.rcPaint extends beyond the back buffer's
-      //      bounds — those new pixels would otherwise stay black.
+      // Fill the dirty region with the background color. Covers newly exposed
+      // pixels during resize and startup before the back buffer is ready.
+      // WS_CLIPCHILDREN excludes the toolbar's rect automatically, so this
+      // fill never touches the toolbar area.
       HBRUSH hBkgBrush = CreateSolidBrush(g_bkg_color);
       FillRect(hdc, &ps.rcPaint, hBkgBrush);
       DeleteObject(hBkgBrush);
@@ -180,28 +320,38 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       // bitmap between our null-check and the BitBlt call.
       EnterCriticalSection(&g_paintCS);
       if (g_hdcMem != nullptr && g_hbmMem != nullptr) {
-        // BitBlt copies only the invalidated rectangle from the back buffer
-        // to the window DC. SRCCOPY means a straight pixel copy with no
-        // blending. This restores any shapes the art thread has drawn there,
-        // including regions uncovered by other windows being moved away.
-        BitBlt(hdc, ps.rcPaint.left, ps.rcPaint.top,
-               ps.rcPaint.right - ps.rcPaint.left,
-               ps.rcPaint.bottom - ps.rcPaint.top,
-               g_hdcMem, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
+        // Blit the whole back buffer to the window at (0, g_toolbarHeight).
+        // Back buffer coords are art-local (0..cxClient-1, 0..cyClient-1);
+        // shifting by the toolbar height places the canvas below the toolbar.
+        BitBlt(hdc, 0, g_toolbarHeight, cxClient, cyClient,
+               g_hdcMem, 0, 0, SRCCOPY);
       }
       LeaveCriticalSection(&g_paintCS);
       EndPaint(hWnd, &ps);
       break;
     }
-    case WM_SIZE:
+    case WM_SIZE: {
+      // Let the toolbar re-measure itself for the new parent width. After this
+      // the toolbar fills the top strip; we re-read its height in case the
+      // row count changed (e.g. buttons wrapping).
+      if (g_hToolbar != nullptr) {
+        SendMessage(g_hToolbar, TB_AUTOSIZE, 0, 0);
+        RECT tbRect;
+        GetWindowRect(g_hToolbar, &tbRect);
+        g_toolbarHeight = tbRect.bottom - tbRect.top;
+      }
+      // cxClient / cyClient represent the ART canvas, not the parent's client
+      // area — the toolbar isn't drawable space. Clamp to zero when the
+      // window is smaller than the toolbar (minimized / extreme resize).
       cxClient = LOWORD(lParam);
-      cyClient = HIWORD(lParam);
-      // The client area changed size, so recreate the back buffer to match.
-      // If the window shrank, the old bitmap is too large and wastes memory.
-      // If it grew, the old bitmap is too small and BitBlt would read outside
-      // its bounds, producing black pixels in the newly exposed area.
+      cyClient = HIWORD(lParam) - g_toolbarHeight;
+      if (cyClient < 0) cyClient = 0;
+      // The art canvas changed size, so recreate the back buffer to match.
+      // If it grew, the old bitmap would be too small and BitBlt would read
+      // outside its bounds; if it shrank, the old one just wastes memory.
       RecreateBackBuffer(hWnd, cxClient, cyClient);
       break;
+    }
     case WM_COMMAND: {
       const int command = LOWORD(wParam);
       switch (command) {
@@ -448,9 +598,11 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       if (g_draw_mode) {
         // Begin a drawing stroke. Capture the mouse so we keep receiving
         // WM_MOUSEMOVE/WM_LBUTTONUP even if the cursor leaves the client area.
+        // Mouse coords arrive in window-client space; subtract g_toolbarHeight
+        // to translate them into the art canvas's coordinate system.
         s_drawing = true;
         s_lastDraw.x = GET_X_LPARAM(lParam);
-        s_lastDraw.y = GET_Y_LPARAM(lParam);
+        s_lastDraw.y = GET_Y_LPARAM(lParam) - g_toolbarHeight;
         SetCapture(hWnd);
         // Drop a single dot at the starting point so a click with no drag is
         // still visible.
@@ -459,8 +611,10 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           SetPixel(g_hdcMem, s_lastDraw.x, s_lastDraw.y, g_draw_color);
         }
         LeaveCriticalSection(&g_paintCS);
-        RECT rc = { s_lastDraw.x, s_lastDraw.y,
-                    s_lastDraw.x + 1, s_lastDraw.y + 1 };
+        // InvalidateRect uses window-client coords, so add the toolbar height
+        // back in for the update rectangle.
+        RECT rc = { s_lastDraw.x, s_lastDraw.y + g_toolbarHeight,
+                    s_lastDraw.x + 1, s_lastDraw.y + g_toolbarHeight + 1 };
         InvalidateRect(hWnd, &rc, FALSE);
       } else {
         // Default behavior: left-click drag moves the window.
@@ -510,8 +664,10 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         // to the current cursor position in the back buffer, then invalidate
         // just the bounding rect of the segment so WM_PAINT blits a tight
         // region instead of the whole window.
+        // Translate mouse coords into back-buffer space by subtracting the
+        // toolbar's height (which WM_MOUSEMOVE includes in its Y component).
         const int x = GET_X_LPARAM(lParam);
-        const int y = GET_Y_LPARAM(lParam);
+        const int y = GET_Y_LPARAM(lParam) - g_toolbarHeight;
         EnterCriticalSection(&g_paintCS);
         if (g_hdcMem != nullptr && g_hbmMem != nullptr) {
           HPEN hDrawPen = CreatePen(PS_SOLID, 1, g_draw_color);
@@ -526,11 +682,13 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         // full width and any anti-aliased edges.
         // POINT stores LONG, the mouse coords are int — force the template
         // parameter so std::min/std::max don't try to deduce mismatched types.
+        // The rect needs to be in window-client coords for InvalidateRect,
+        // so shift Y back down by the toolbar height.
         RECT rc = {
           std::min<LONG>(s_lastDraw.x, x) - 1,
-          std::min<LONG>(s_lastDraw.y, y) - 1,
+          std::min<LONG>(s_lastDraw.y, y) - 1 + g_toolbarHeight,
           std::max<LONG>(s_lastDraw.x, x) + 2,
-          std::max<LONG>(s_lastDraw.y, y) + 2,
+          std::max<LONG>(s_lastDraw.y, y) + 2 + g_toolbarHeight,
         };
         InvalidateRect(hWnd, &rc, FALSE);
         s_lastDraw.x = x;
@@ -615,7 +773,7 @@ bool InitApp(HWND hWnd) {
   // All settings (shape mode, delay, background color, concurrent shapes) are already set by
   // InitMenuDefaults.
   if (!ShowArt()) {
-    MessageBoxW(nullptr, L"ShowArt failed!", L"ShowArt Error", MB_OK | MB_ICONERROR);
+    ErrorBox(hWnd, L"ShowArt Error", L"ShowArt failed!");
     return false;
   }
   // Only start background music if IDM_SOUND is CHECKED in the RC at startup.
@@ -629,7 +787,7 @@ bool InitApp(HWND hWnd) {
 }
 
 bool LaunchHelp(HWND hWnd) {
-  if (MessageBoxW(hWnd, L"No help yet...", L"Help Error", MB_OK | MB_ICONWARNING) == IDOK) {
+  if (InfoBox(hWnd, L"Help32", L"No help yet...")) {
     return true;
   }
   return false;

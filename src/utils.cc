@@ -195,24 +195,6 @@ bool SaveClientBitmap(HWND hWnd) {
   return ok;
 }
 
-// Opens the system ChooseColor common dialog and stores the picked color in
-// g_draw_color. The custom-color slot array is kept in a function-static so
-// user-mixed colors persist across multiple invocations of the picker.
-bool PickColor(HWND hWnd) {
-  static COLORREF customColors[16] = {}; // slots the dialog lets the user save
-  CHOOSECOLORW cc = {};
-  cc.lStructSize  = sizeof(cc);
-  cc.hwndOwner    = hWnd;
-  cc.rgbResult    = g_draw_color;              // initialize on current color
-  cc.lpCustColors = customColors;
-  cc.Flags        = CC_FULLOPEN | CC_RGBINIT;  // full picker, respect rgbResult
-  if (!ChooseColorW(&cc)) {
-    return false; // user cancelled or dialog error
-  }
-  g_draw_color = cc.rgbResult;
-  return true;
-}
-
 inline static void __KillInt3Asm() {
 #ifdef __MINGW32__
   asm("int3\n\t"
@@ -274,7 +256,7 @@ const int TestTrap(TrapType type) {
       retval = 0;
       break;
     default:
-      std::wcout << L"Invalid trap type! " << std::endl;
+      LOG(ERROR) << L"Invalid trap type!";
       retval = -1;
       break;
   }
@@ -292,7 +274,7 @@ bool PlayWavFile(const std::wstring& wav_file) {
   if (success) {
     g_playsound = true;
   } else {
-    std::wcerr << L"Failed to play sound " << wav_file << std::endl;
+    LOG(ERROR) << L"Failed to play sound " << wav_file;
     g_playsound = false;
   }
   return success;
@@ -303,7 +285,7 @@ bool StopPlayWav() {
   if (success) {
     g_playsound = false;
   } else {
-    MessageBoxW(mainHwnd, L"Failed to stop playing sound!", L"PlaySound Error", MB_OK | MB_ICONERROR);
+    ErrorBox(nullptr, L"PlaySound Error", L"Failed to stop playing sound!");
   }
   return success;
 }
@@ -314,4 +296,52 @@ bool ToggleSound() {
   } else {
     return PlayWavFile(sound_file);
   }  
+}
+
+// Opens the system ChooseColor common dialog and stores the picked color in
+// g_draw_color. The custom-color slot array is kept in a function-static so
+// user-mixed colors persist across multiple invocations of the picker.
+bool PickColor(HWND hWnd) {
+  static COLORREF customColors[16] = {}; // slots the dialog lets the user save
+  CHOOSECOLORW cc = {};
+  cc.lStructSize  = sizeof(cc);
+  cc.hwndOwner    = hWnd;
+  cc.rgbResult    = g_draw_color;              // initialize on current color
+  cc.lpCustColors = customColors;
+  cc.Flags        = CC_FULLOPEN | CC_RGBINIT;  // full picker, respect rgbResult
+  if (!ChooseColorW(&cc)) {
+    return false; // user cancelled or dialog error
+  }
+  g_draw_color = cc.rgbResult;
+  return true;
+}
+
+bool InfoBox(HWND hWnd, const std::wstring& title, const std::wstring& message) {
+  HWND hWndTmp;
+  if (hWnd == nullptr && mainHwnd != nullptr) {
+    hWndTmp = mainHwnd;
+  } else {
+    hWndTmp = hWnd;
+  }
+  return (MessageBoxW(hWndTmp, message.c_str(), title.c_str(), MB_OK | MB_ICONINFORMATION) == IDOK);
+}
+
+bool WarnBox(HWND hWnd, const std::wstring& title, const std::wstring& message) {
+  HWND hWndTmp;
+  if (hWnd == nullptr && mainHwnd != nullptr) {
+    hWndTmp = mainHwnd;
+  } else {
+    hWndTmp = hWnd;
+  }
+  return (MessageBoxW(hWndTmp, message.c_str(), title.c_str(), MB_OK | MB_ICONWARNING) == IDOK);
+}
+
+bool ErrorBox(HWND hWnd, const std::wstring& title, const std::wstring& message) {
+  HWND hWndTmp;
+  if (hWnd == nullptr && mainHwnd != nullptr) {
+    hWndTmp = mainHwnd;
+  } else {
+    hWndTmp = hWnd;
+  }
+  return (MessageBoxW(hWndTmp, message.c_str(), title.c_str(), MB_OK | MB_ICONERROR) == IDOK);
 }

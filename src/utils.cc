@@ -16,7 +16,9 @@ void InitMenuDefaults(HWND hWnd) {
   HMENU hShapes   = GetSubMenu(hSettings, 4);
   HMENU hBkgMenu  = GetSubMenu(hSettings, 7);
   HMENU hDelay    = GetSubMenu(hSettings, 8);
-  HMENU hConc     = GetSubMenu(hSettings, 10);
+  // Concurrent Shapes now lives inside the Shapes submenu, after the
+  // Beziers/Lines entries and a separator (so index 7).
+  HMENU hConc     = GetSubMenu(hShapes, 7);
 
   // Shape mode — exactly one of the three items must be CHECKED in the RC
   if (GetMenuState(hShapes, IDM_RECTANGLES, MF_BYCOMMAND) & MF_CHECKED) {
@@ -377,6 +379,30 @@ static int s_idxPen    = 0;
 static int s_idxNoDraw = 0;
 static int s_idxShapes = 0;
 
+// Disables Visual Styles (theming) on a single window by dynamically loading
+// uxtheme.dll and calling SetWindowTheme with empty theme/class strings.
+// XP+ themed toolbars render buttons as flat panels that only show a raised
+// outline on hover; disabling the theme falls back to the classic renderer
+// which gives every button a permanent 3D raised bevel — the look consistent
+// with the Win2000/XP-Classic appearance across every Windows version.
+//
+// We bind dynamically rather than linking uxtheme.lib so the binary still
+// loads on Windows 2000 (where uxtheme.dll does not exist). If LoadLibrary
+// fails there is nothing to disable anyway — classic rendering is already
+// in effect — so we just return quietly.
+static void DisableWindowTheme(HWND hWnd) {
+  HMODULE hUxTheme = LoadLibraryW(L"uxtheme.dll");
+  if (hUxTheme == nullptr) return;
+  typedef HRESULT (WINAPI *SetWindowThemeFn)(HWND, LPCWSTR, LPCWSTR);
+  SetWindowThemeFn pSetWindowTheme = reinterpret_cast<SetWindowThemeFn>(
+      GetProcAddress(hUxTheme, "SetWindowTheme"));
+  if (pSetWindowTheme != nullptr) {
+    // Empty strings (not nullptr) mean "use no theme" for this window.
+    pSetWindowTheme(hWnd, L"", L"");
+  }
+  FreeLibrary(hUxTheme);
+}
+
 // Subclass for the toolbar, handling two things:
 //
 //   WM_ERASEBKGND — fill the client area with the standard 3D face color.
@@ -530,7 +556,7 @@ void CreateAppToolbar(HWND hParent, HINSTANCE hInst) {
   //   fsStyle   — TBSTYLE_BUTTON (push button) or TBSTYLE_SEP (gap)
   //   dwData    — app-defined extra data we don't need
   //   iString   — tooltip/label text pointer (cast through INT_PTR)
-  TBBUTTON tbButtons[11] = {};
+  TBBUTTON tbButtons[9] = {};
 
   tbButtons[0].iBitmap   = idxSave;
   tbButtons[0].idCommand = IDM_SAVE_AS;
@@ -540,43 +566,40 @@ void CreateAppToolbar(HWND hParent, HINSTANCE hInst) {
 
   tbButtons[1].fsStyle   = TBSTYLE_SEP;
 
+  // Painting controls clustered between the two separators.
   tbButtons[2].iBitmap   = s_idxPause;
   tbButtons[2].idCommand = IDM_PAUSED;
   tbButtons[2].fsState   = TBSTATE_ENABLED;
   tbButtons[2].fsStyle   = TBSTYLE_BUTTON;
   tbButtons[2].iString   = reinterpret_cast<INT_PTR>(L"Pause");
 
-  tbButtons[3].fsStyle   = TBSTYLE_SEP;
+  tbButtons[3].iBitmap   = s_idxPen;
+  tbButtons[3].idCommand = IDM_DRAW;
+  tbButtons[3].fsState   = TBSTATE_ENABLED;
+  tbButtons[3].fsStyle   = TBSTYLE_BUTTON | TBSTYLE_DROPDOWN;
+  tbButtons[3].iString   = reinterpret_cast<INT_PTR>(L"Draw");
 
-  tbButtons[4].iBitmap   = s_idxPen;
-  tbButtons[4].idCommand = IDM_DRAW;
+  tbButtons[4].iBitmap   = s_idxShapes;
+  tbButtons[4].idCommand = IDM_SHAPES;
   tbButtons[4].fsState   = TBSTATE_ENABLED;
   tbButtons[4].fsStyle   = TBSTYLE_BUTTON | TBSTYLE_DROPDOWN;
-  tbButtons[4].iString   = reinterpret_cast<INT_PTR>(L"Draw");
+  tbButtons[4].iString   = reinterpret_cast<INT_PTR>(L"Shapes");
 
   tbButtons[5].fsStyle   = TBSTYLE_SEP;
 
-  tbButtons[6].iBitmap   = s_idxShapes;
-  tbButtons[6].idCommand = IDM_SHAPES;
+  tbButtons[6].iBitmap   = s_idxSound;
+  tbButtons[6].idCommand = IDM_SOUND;
   tbButtons[6].fsState   = TBSTATE_ENABLED;
-  tbButtons[6].fsStyle   = TBSTYLE_BUTTON | TBSTYLE_DROPDOWN;
-  tbButtons[6].iString   = reinterpret_cast<INT_PTR>(L"Shapes");
+  tbButtons[6].fsStyle   = TBSTYLE_BUTTON;
+  tbButtons[6].iString   = reinterpret_cast<INT_PTR>(L"Play Music");
 
   tbButtons[7].fsStyle   = TBSTYLE_SEP;
 
-  tbButtons[8].iBitmap   = s_idxSound;
-  tbButtons[8].idCommand = IDM_SOUND;
+  tbButtons[8].iBitmap   = idxExit;
+  tbButtons[8].idCommand = IDM_EXIT;
   tbButtons[8].fsState   = TBSTATE_ENABLED;
   tbButtons[8].fsStyle   = TBSTYLE_BUTTON;
-  tbButtons[8].iString   = reinterpret_cast<INT_PTR>(L"Play Music");
-
-  tbButtons[9].fsStyle   = TBSTYLE_SEP;
-
-  tbButtons[10].iBitmap   = idxExit;
-  tbButtons[10].idCommand = IDM_EXIT;
-  tbButtons[10].fsState   = TBSTATE_ENABLED;
-  tbButtons[10].fsStyle   = TBSTYLE_BUTTON;
-  tbButtons[10].iString   = reinterpret_cast<INT_PTR>(L"Exit");
+  tbButtons[8].iString   = reinterpret_cast<INT_PTR>(L"Exit");
 
   SendMessageW(hTB, TB_ADDBUTTONS,
               sizeof(tbButtons) / sizeof(tbButtons[0]),
@@ -596,6 +619,11 @@ void CreateAppToolbar(HWND hParent, HINSTANCE hInst) {
   s_origToolbarProc = reinterpret_cast<WNDPROC>(
       SetWindowLongPtrW(hTB, GWLP_WNDPROC,
                        reinterpret_cast<LONG_PTR>(ToolbarSubclassProc)));
+
+  // Turn off Visual Styles for this toolbar so every button gets the
+  // classic always-visible raised bevel, not just on hover. No-op on Win2K
+  // (no uxtheme.dll).
+  DisableWindowTheme(hTB);
 
   // TB_AUTOSIZE tells the toolbar to re-measure itself based on its buttons
   // and the parent's width. Required after adding/removing buttons and also
@@ -704,7 +732,7 @@ bool HandleToolbarTooltips(NMHDR* pnmh) {
       text = L"Exit DegenArt";
       break;
     case IDM_SHAPES:
-      text = L"Choose which shapes & line styles to use";
+      text = L"Choose which shapes && line styles to use";
       break;
     case IDM_PAUSED:
       text = g_paused ? L"Resume Painting" : L"Pause Painting";

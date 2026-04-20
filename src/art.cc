@@ -41,7 +41,8 @@ DWORD WINAPI ArtThread(LPVOID pvoid) {
   std::uniform_int_distribution<int> colorDist(0, 255);
   // Used for the "both" mode coin toss — each shape independently picks a type.
   std::uniform_int_distribution<int> coinDist(0, 1);
-  std::uniform_int_distribution<int> diceDist(0, 5);
+  std::uniform_int_distribution<int> diceDist(0, 5);     // 1-in-6 (beziers)
+  std::uniform_int_distribution<int> lineDiceDist(0, 4); // 1-in-5 (lines)
   // Fixed palette for bezier or lines strokes — a small set of saturated colors looks
   // cleaner against the busy random shape background than fully random hues.
   static const COLORREF customPalette[] = {
@@ -122,8 +123,9 @@ DWORD WINAPI ArtThread(LPVOID pvoid) {
         const bool use_ellipse = g_both ? (coinDist(rng) != 0) : g_circles;
         // Only use beziers if enabled, with a 1-in-6 chance per shape.
         // diceDist yields 0..5 uniformly, so matching 0 gives exactly 1/6.
-        const bool use_beziers = g_beziers ? (diceDist(rng) == 0) : false;
-        const bool use_lines   = g_lines   ? (diceDist(rng) == 0) : false;
+        // lineDiceDist yields 0..4, giving lines a slightly higher 1/5 chance.
+        const bool use_beziers = g_beziers ? (diceDist(rng) == 0)     : false;
+        const bool use_lines   = g_lines   ? (lineDiceDist(rng) == 0) : false;
         // Draw the shape into the back buffer (g_hdcMem), not the screen.
         // min/max ensure the coordinates are top-left/bottom-right regardless
         // of which random value ended up larger.

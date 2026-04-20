@@ -345,14 +345,14 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           // new random shapes; exiting does NOT auto-unpause — that requires
           // IDM_PAUSED, matching how IDM_SINGLE works.
           g_draw_mode = !g_draw_mode;
-          HMENU hEdit = GetSubMenu(GetMenu(hWnd), 1);
-          CheckMenuItem(hEdit, IDM_DRAW,
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
+          CheckMenuItem(hSettings, IDM_DRAW,
                         MF_BYCOMMAND | (g_draw_mode ? MF_CHECKED : MF_UNCHECKED));
           // Mirror the state on the toolbar: swap icon + label.
           SetDrawButton(g_draw_mode);
           if (g_draw_mode && !g_paused) {
             TogglePaintArt(hWnd);
-            HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
+            // hSettings is already in scope from the draw-mode check-mark step above.
             CheckMenuItem(hSettings, IDM_PAUSED, MF_BYCOMMAND | MF_CHECKED);
             // Mirror the paused state onto the toolbar's Pause/Play button.
             SetPauseButton(g_paused);
@@ -389,8 +389,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           // Also clean up any in-progress stroke so capture isn't stranded.
           if (!g_paused && g_draw_mode) {
             g_draw_mode = false;
-            HMENU hEdit = GetSubMenu(GetMenu(hWnd), 1);
-            CheckMenuItem(hEdit, IDM_DRAW, MF_BYCOMMAND | MF_UNCHECKED);
+            CheckMenuItem(hSettings, IDM_DRAW, MF_BYCOMMAND | MF_UNCHECKED);
             // Mirror the state on the toolbar: revert icon + label.
             SetDrawButton(false);
             if (s_drawing) {
@@ -444,8 +443,10 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         case IDM_CONC_4: {
           // Consecutive IDs let us derive the count directly from the command.
           SetNumShapes((command - IDM_CONC_1) + 1);
+          // Concurrent Shapes now lives inside the Shapes submenu.
           HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
-          HMENU hConc     = GetSubMenu(hSettings, 10);
+          HMENU hShapes   = GetSubMenu(hSettings, 4);
+          HMENU hConc     = GetSubMenu(hShapes, 7);
           CheckMenuRadioItem(hConc, IDM_CONC_1, IDM_CONC_4, command, MF_BYCOMMAND);
           break;
         }

@@ -79,14 +79,13 @@ BEGIN
     END
     POPUP "&Edit"
     BEGIN
-        MENUITEM "&Draw on Canvas", IDM_DRAW
         MENUITEM "&Pick Color",     IDM_PICKCOLOR
     END
     POPUP "&Settings"
     BEGIN
         
         MENUITEM "&Pause Painting", IDM_PAUSED
-        MENUITEM "&Repaint Now",    IDM_REPAINT
+        MENUITEM "&Draw Mode",      IDM_DRAW
         MENUITEM "&Play Music?",    IDM_SOUND
         MENUITEM SEPARATOR
         POPUP "&Shapes"
@@ -97,13 +96,21 @@ BEGIN
             MENUITEM SEPARATOR
             MENUITEM "Be&ziers",    IDM_BEZIERS
             MENUITEM "&Lines",      IDM_LINES, CHECKED
+            MENUITEM SEPARATOR
+            POPUP "&Concurrent Shapes"
+            BEGIN
+                MENUITEM "1 Threads", IDM_CONC_1
+                MENUITEM "2 Threads", IDM_CONC_2
+                MENUITEM "3 Threads", IDM_CONC_3, CHECKED
+                MENUITEM "4 Threads", IDM_CONC_4
+            END
         END
         MENUITEM SEPARATOR
         MENUITEM "&Use MonoChrome", IDM_MONOCHROME
         POPUP "&Background Color"
         BEGIN
-            MENUITEM "&White", IDM_WHITE_BKG, CHECKED
-            MENUITEM "&Black", IDM_BLACK_BKG
+            MENUITEM "&White", IDM_WHITE_BKG
+            MENUITEM "&Black", IDM_BLACK_BKG, CHECKED
             MENUITEM "&Grey",  IDM_GREY_BKG
             MENUITEM "&Red",   IDM_RED_BKG
             MENUITEM "&Green", IDM_GREEN_BKG
@@ -117,17 +124,10 @@ BEGIN
             MENUITEM "&Fast   (1/2 sec.)", IDM_FAST, CHECKED
             MENUITEM "&Hyper  (1/4 sec.)", IDM_HYPER
         END
-        MENUITEM SEPARATOR
-        POPUP "&Concurrent Shapes"
-        BEGIN
-            MENUITEM "1 Threads", IDM_CONC_1
-            MENUITEM "2 Threads", IDM_CONC_2
-            MENUITEM "3 Threads", IDM_CONC_3, CHECKED
-            MENUITEM "4 Threads", IDM_CONC_4
-        END
     END
     POPUP "&Dev"
     BEGIN
+        MENUITEM "&Repaint Now",         IDM_REPAINT
         MENUITEM "&Single Step Drawing", IDM_SINGLE
         MENUITEM "&Test Trap",           IDM_TESTTRAP
     END

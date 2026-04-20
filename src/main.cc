@@ -239,17 +239,41 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       // coords — ClientToScreen on the toolbar's HWND (hdr.hwndFrom) gives
       // the screen-coord anchor TrackPopupMenu wants.
       LPNMHDR pnmh = reinterpret_cast<LPNMHDR>(lParam);
+      // Toolbar tooltip requests are cheap and noisy, so let utils.cc answer
+      // them first and only fall through to other toolbar notifications when
+      // it wasn't a tooltip message.
+      if (HandleToolbarTooltips(pnmh)) break;
       if (pnmh->code == TBN_DROPDOWN) {
         LPNMTOOLBAR pnmtb = reinterpret_cast<LPNMTOOLBAR>(lParam);
+        // Anchor whatever popup we show just below the button's bottom edge.
+        POINT pt = { pnmtb->rcButton.left, pnmtb->rcButton.bottom };
+        ClientToScreen(pnmh->hwndFrom, &pt);
+
         if (pnmtb->iItem == IDM_DRAW) {
-          POINT pt = { pnmtb->rcButton.left, pnmtb->rcButton.bottom };
-          ClientToScreen(pnmh->hwndFrom, &pt);
+          // Transient popup built on the fly with the quick-pick colors plus
+          // a "Pick Color..." entry that reuses the existing IDM_PICKCOLOR
+          // handler.
+          // Build the dropdown. The currently-selected color (if it matches a
+          // preset) gets MF_CHECKED so the user can see what's active. If
+          // g_draw_color was set via the full picker to something non-preset,
+          // no item will be checked — that's fine.
+          const UINT kChecked = MF_STRING | MF_CHECKED;
           HMENU hMenu = CreatePopupMenu();
-          AppendMenuW(hMenu, MF_STRING, IDM_DRAW_WHITE, L"White");
-          AppendMenuW(hMenu, MF_STRING, IDM_DRAW_BLACK, L"Black");
-          AppendMenuW(hMenu, MF_STRING, IDM_DRAW_RED,   L"Red");
-          AppendMenuW(hMenu, MF_STRING, IDM_DRAW_GREEN, L"Green");
-          AppendMenuW(hMenu, MF_STRING, IDM_DRAW_BLUE,  L"Blue");
+          AppendMenuW(hMenu,
+                      g_draw_color == RGB_BLACK ? kChecked : MF_STRING,
+                      IDM_DRAW_BLACK, L"Black");
+          AppendMenuW(hMenu,
+                      g_draw_color == RGB_WHITE ? kChecked : MF_STRING,
+                      IDM_DRAW_WHITE, L"White");
+          AppendMenuW(hMenu,
+                      g_draw_color == RGB_RED ? kChecked : MF_STRING,
+                      IDM_DRAW_RED, L"Red");
+          AppendMenuW(hMenu,
+                      g_draw_color == RGB_GREEN ? kChecked : MF_STRING,
+                      IDM_DRAW_GREEN, L"Green");
+          AppendMenuW(hMenu,
+                      g_draw_color == RGB_BLUE ? kChecked : MF_STRING,
+                      IDM_DRAW_BLUE, L"Blue");
           AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
           AppendMenuW(hMenu, MF_STRING, IDM_PICKCOLOR, L"Pick Color...");
           // TrackPopupMenu dispatches any selection as a WM_COMMAND to hWnd,
@@ -259,6 +283,18 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           DestroyMenu(hMenu);
           // TBDDRET_DEFAULT tells the toolbar we handled the notification so
           // it doesn't also try to show a default (empty) dropdown.
+          return TBDDRET_DEFAULT;
+        }
+        if (pnmtb->iItem == IDM_SHAPES) {
+          // Reuse the Settings → Shapes submenu directly. Because it's the
+          // same HMENU object the main menu bar uses, its radio check marks
+          // (Rectangles/Ellipses/Both) and toggles (Beziers/Lines) stay in
+          // perfect sync with the existing WM_COMMAND handlers — no
+          // duplicate items, no manual state sync needed.
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
+          HMENU hShapes   = GetSubMenu(hSettings, 4);
+          TrackPopupMenu(hShapes, TPM_LEFTALIGN | TPM_TOPALIGN,
+                         pt.x, pt.y, 0, hWnd, nullptr);
           return TBDDRET_DEFAULT;
         }
       }
@@ -293,6 +329,15 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         case IDM_DRAW_RED:   g_draw_color = RGB_RED;   break;
         case IDM_DRAW_GREEN: g_draw_color = RGB_GREEN; break;
         case IDM_DRAW_BLUE:  g_draw_color = RGB_BLUE;  break;
+        case IDM_SHAPES: {
+          // Clicking the button body (vs the dropdown arrow) lands here.
+          // Show the same popup the arrow does — reuse the Settings → Shapes
+          // submenu so check marks stay auto-synced.
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
+          HMENU hShapes   = GetSubMenu(hSettings, 4);
+          PopupUnderToolbarButton(hWnd, IDM_SHAPES, hShapes);
+          break;
+        }
         case IDM_DRAW: {
           // Toggle free-draw mode. While on, left-click + drag paints into the
           // back buffer instead of moving the window. On activation we also

@@ -10,14 +10,15 @@
 #define IDI_ABOUT                   103 /* About Dialog icon */
 
 /* Bitmaps */
-#define IDB_PEN_BMP                 104 /* "Pen" icon for toolbar strip */
-#define IDB_NODRAW_BMP              105 /* "Pen X" icon for toolbar strip, overwrites Pen icon when needed */
-#define IDB_SHAPES_BMP              106 /* "Shapes" icon for toolbar strip */
-#define IDB_PAUSE_BMP               107 /* "Pause" icon for toolbar strip */
-#define IDB_PLAY_BMP                108 /* "Play" icon for toolbar strip, overwrites Pause icon when needed */
-#define IDB_EXIT_BMP                109 /* "Exit" icon for toolbar strip */
-#define IDB_SOUND_BMP               110 /* "Speaker" icon for toolbar strip */
+#define IDB_PEN_BMP                 104 /* "Pen" icon for toolbar strip, extracted from Win2K mspaint.exe */
+#define IDB_NODRAW_BMP              105 /* "Pen X" icon for toolbar strip, overwrites Pen icon when needed, modified with red X */
+#define IDB_SHAPES_BMP              106 /* "Shapes" icon for toolbar strip, custom icon */
+#define IDB_PAUSE_BMP               107 /* "Pause" icon for toolbar strip, custom icon */
+#define IDB_PLAY_BMP                108 /* "Play" icon for toolbar strip, overwrites Pause icon when needed, custom icon */
+#define IDB_EXIT_BMP                109 /* "Exit" icon for toolbar strip, custom icon */
+#define IDB_SOUND_BMP               110 /* "Speaker" icon for toolbar strip, same as Win2000 speaker icon*/
 #define IDB_MUTE_BMP                111 /* "Mute" icon for toolbar strip, overwrites Speaker icon when needed */
+#define IDB_SAVE_BMP                112 /* "Save" icon for toolbar strip, floppy disk icon */
 
 /* Main application resource, also used to attach menu */
 #define IDC_MAIN                    133
@@ -90,6 +91,9 @@
 #define IDM_DRAW_RED                233
 #define IDM_DRAW_GREEN              234
 #define IDM_DRAW_BLUE               235
+
+// Toolbar button menu itentifier for "Shapes" button with submenu.
+#define IDM_SHAPES                  236
 
 // Dev menu items
 #define IDM_TESTTRAP                250

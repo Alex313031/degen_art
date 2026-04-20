@@ -33,6 +33,7 @@ IDI_SMALL  ICON  "res/small.ico"
 IDI_ABOUT  ICON  "res/about.ico"
 
 // Bitmaps
+IDB_SAVE_BMP   BITMAP "res/save.bmp"
 IDB_PEN_BMP    BITMAP "res/pen.bmp"
 IDB_NODRAW_BMP BITMAP "res/nodraw.bmp"
 IDB_SHAPES_BMP BITMAP "res/shapes.bmp"

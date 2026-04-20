@@ -375,6 +375,7 @@ static int s_idxSound  = 0;
 static int s_idxMute   = 0;
 static int s_idxPen    = 0;
 static int s_idxNoDraw = 0;
+static int s_idxShapes = 0;
 
 // Subclass for the toolbar, handling two things:
 //
@@ -448,10 +449,10 @@ static LRESULT CALLBACK ToolbarSubclassProc(HWND hWnd, UINT msg,
 // A toolbar in Win32 is its own child window of class TOOLBARCLASSNAME
 // (provided by the Common Controls DLL). We populate it with buttons that
 // pull their images from a "bitmap strip" — a single wide bitmap where each
-// button's image is a fixed-size slice. The Common Controls DLL ships with
-// standard strips (new, open, save, cut/copy/paste, etc.) that any app can
-// use without shipping its own icon files. We use IDB_STD_SMALL_COLOR and
-// pick STD_FILESAVE (the floppy disk icon) from it.
+// button's image is a fixed-size slice. All of this app's toolbar icons are
+// loaded from its own resources (IDB_* bitmaps in degen_art.rc) rather than
+// from the comctl32 standard strip, so the look stays consistent across
+// Windows versions and theme variations.
 //
 // Button clicks arrive as WM_COMMAND messages to the parent, with wParam
 // low-word set to the button's idCommand. Here we map the save button to
@@ -487,20 +488,15 @@ void CreateAppToolbar(HWND hParent, HINSTANCE hInst) {
   // returns the starting index of the images it just added. That index is
   // what TBBUTTON::iBitmap refers to.
   //
-  // First: the standard small-icon strip from comctl32, which gives us the
-  // built-in icons (STD_FILESAVE etc.). Standard strips are appended at
-  // index 0 here, so STD_FILESAVE's position in the strip is what iBitmap uses.
+  // All bitmaps come from this app's own resources (hInst = the exe's module
+  // handle). Each is a single-image bitmap, so nBitmaps = 1 per call.
+  // Pause/Play, Sound/Mute, and Pen/NoDraw indices are stored in file-
+  // statics so Set*Button() can swap between them on state changes.
   TBADDBITMAP tbab = {};
-  tbab.hInst = HINST_COMMCTRL;
-  tbab.nID   = IDB_STD_SMALL_COLOR;
-  SendMessage(hTB, TB_ADDBITMAP, 0, reinterpret_cast<LPARAM>(&tbab));
-
-  // Now our own single-image bitmaps from the app's resources. Each is
-  // appended to the same image list, so we capture the returned index to
-  // use when declaring the corresponding button. Pause/Play and Sound/Mute
-  // indices are stored in file-statics so SetPauseButton / SetSoundButton
-  // can swap between them on state changes.
   tbab.hInst = hInst;
+  tbab.nID = IDB_SAVE_BMP;
+  const int idxSave = static_cast<int>(
+      SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
   tbab.nID = IDB_PAUSE_BMP;
   s_idxPause = static_cast<int>(
       SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
@@ -512,6 +508,9 @@ void CreateAppToolbar(HWND hParent, HINSTANCE hInst) {
       SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
   tbab.nID = IDB_NODRAW_BMP;
   s_idxNoDraw = static_cast<int>(
+      SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
+  tbab.nID = IDB_SHAPES_BMP;
+  s_idxShapes = static_cast<int>(
       SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
   tbab.nID = IDB_SOUND_BMP;
   s_idxSound = static_cast<int>(
@@ -531,9 +530,9 @@ void CreateAppToolbar(HWND hParent, HINSTANCE hInst) {
   //   fsStyle   — TBSTYLE_BUTTON (push button) or TBSTYLE_SEP (gap)
   //   dwData    — app-defined extra data we don't need
   //   iString   — tooltip/label text pointer (cast through INT_PTR)
-  TBBUTTON tbButtons[9] = {};
+  TBBUTTON tbButtons[11] = {};
 
-  tbButtons[0].iBitmap   = STD_FILESAVE;
+  tbButtons[0].iBitmap   = idxSave;
   tbButtons[0].idCommand = IDM_SAVE_AS;
   tbButtons[0].fsState   = TBSTATE_ENABLED;
   tbButtons[0].fsStyle   = TBSTYLE_BUTTON;
@@ -557,19 +556,27 @@ void CreateAppToolbar(HWND hParent, HINSTANCE hInst) {
 
   tbButtons[5].fsStyle   = TBSTYLE_SEP;
 
-  tbButtons[6].iBitmap   = s_idxSound;
-  tbButtons[6].idCommand = IDM_SOUND;
+  tbButtons[6].iBitmap   = s_idxShapes;
+  tbButtons[6].idCommand = IDM_SHAPES;
   tbButtons[6].fsState   = TBSTATE_ENABLED;
-  tbButtons[6].fsStyle   = TBSTYLE_BUTTON;
-  tbButtons[6].iString   = reinterpret_cast<INT_PTR>(L"Play Music");
+  tbButtons[6].fsStyle   = TBSTYLE_BUTTON | TBSTYLE_DROPDOWN;
+  tbButtons[6].iString   = reinterpret_cast<INT_PTR>(L"Shapes");
 
   tbButtons[7].fsStyle   = TBSTYLE_SEP;
 
-  tbButtons[8].iBitmap   = idxExit;
-  tbButtons[8].idCommand = IDM_EXIT;
+  tbButtons[8].iBitmap   = s_idxSound;
+  tbButtons[8].idCommand = IDM_SOUND;
   tbButtons[8].fsState   = TBSTATE_ENABLED;
   tbButtons[8].fsStyle   = TBSTYLE_BUTTON;
-  tbButtons[8].iString   = reinterpret_cast<INT_PTR>(L"Exit");
+  tbButtons[8].iString   = reinterpret_cast<INT_PTR>(L"Play Music");
+
+  tbButtons[9].fsStyle   = TBSTYLE_SEP;
+
+  tbButtons[10].iBitmap   = idxExit;
+  tbButtons[10].idCommand = IDM_EXIT;
+  tbButtons[10].fsState   = TBSTATE_ENABLED;
+  tbButtons[10].fsStyle   = TBSTYLE_BUTTON;
+  tbButtons[10].iString   = reinterpret_cast<INT_PTR>(L"Exit");
 
   SendMessage(hTB, TB_ADDBUTTONS,
               sizeof(tbButtons) / sizeof(tbButtons[0]),
@@ -655,4 +662,61 @@ void SetDrawButton(bool drawing) {
   bi.pszText = const_cast<LPWSTR>(drawing ? L"Stop Draw" : L"Draw");
   SendMessage(s_hToolbar, TB_SETBUTTONINFOW, IDM_DRAW,
               reinterpret_cast<LPARAM>(&bi));
+}
+
+void PopupUnderToolbarButton(HWND hOwner, int idCommand, HMENU hMenu) {
+  if (s_hToolbar == nullptr || hMenu == nullptr) return;
+  // TB_GETRECT returns the button's rect in toolbar-client coords.
+  RECT rc;
+  if (!SendMessage(s_hToolbar, TB_GETRECT, idCommand,
+                   reinterpret_cast<LPARAM>(&rc))) {
+    return;
+  }
+  // Convert the bottom-left corner to screen space — that's where
+  // TrackPopupMenu wants its anchor.
+  POINT pt = { rc.left, rc.bottom };
+  ClientToScreen(s_hToolbar, &pt);
+  TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_TOPALIGN,
+                 pt.x, pt.y, 0, hOwner, nullptr);
+}
+
+bool HandleToolbarTooltips(NMHDR* pnmh) {
+  if (pnmh == nullptr || s_hToolbar == nullptr) return false;
+  // TTN_GETDISPINFOW and TTN_NEEDTEXTW have the same numeric value; accepting
+  // both keeps us portable across comctl32 versions. For ANSI comctl the code
+  // would be TTN_NEEDTEXTA, but this app is Unicode-only so we ignore that.
+  if (pnmh->code != TTN_GETDISPINFOW && pnmh->code != TTN_NEEDTEXTW) {
+    return false;
+  }
+  NMTTDISPINFOW* pdi = reinterpret_cast<NMTTDISPINFOW*>(pnmh);
+  const int idCommand = static_cast<int>(pdi->hdr.idFrom);
+
+  // Descriptive tooltip strings per button. State-toggling buttons read the
+  // corresponding global (g_paused / g_draw_mode / g_playsound) to pick the
+  // right variant. Strings here are owned by the process (string literals or
+  // statics), so assigning their pointers to lpszText is safe.
+  const wchar_t* text = nullptr;
+  switch (idCommand) {
+    case IDM_SAVE_AS:
+      text = L"Save current canvas as .bmp";
+      break;
+    case IDM_EXIT:
+      text = L"Exit DegenArt";
+      break;
+    case IDM_SHAPES:
+      text = L"Choose which shapes & line styles to use";
+      break;
+    case IDM_PAUSED:
+      text = g_paused ? L"Resume Painting" : L"Pause Painting";
+      break;
+    case IDM_DRAW:
+      text = g_draw_mode ? L"Stop Drawing" : L"Draw your own lines";
+      break;
+    case IDM_SOUND:
+      text = g_playsound ? L"Mute Music" : L"Play Music";
+      break;
+    default: return false; // unknown button — let the default handling run
+  }
+  pdi->lpszText = const_cast<LPWSTR>(text);
+  return true;
 }

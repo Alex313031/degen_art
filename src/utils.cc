@@ -345,3 +345,314 @@ bool ErrorBox(HWND hWnd, const std::wstring& title, const std::wstring& message)
   }
   return (MessageBoxW(hWndTmp, message.c_str(), title.c_str(), MB_OK | MB_ICONERROR) == IDOK);
 }
+
+// ---------------------------------------------------------------------------
+// Toolbar
+// ---------------------------------------------------------------------------
+// All toolbar state and logic live here. main.cc only calls CreateAppToolbar
+// (from WM_CREATE) and LayoutToolbar (from WM_SIZE); the handle itself never
+// escapes this file.
+
+// The toolbar child window handle. Kept file-static so nothing else can
+// accidentally mutate it — other TUs interact only via the functions below.
+static HWND s_hToolbar = nullptr;
+
+// Saved original toolbar WndProc so our subclass can chain through to it.
+static WNDPROC s_origToolbarProc = nullptr;
+
+// Measured in pixels after TB_AUTOSIZE runs. Exposed through globals.h so
+// art.cc / main.cc can offset the back-buffer blit and mouse coords by it.
+int g_toolbarHeight = 0;
+
+// Bitmap indices captured from TB_ADDBITMAP for the dynamic-icon buttons.
+// TB_ADDBITMAP returns the starting index of images it added to the toolbar's
+// internal image list, which is what TBBUTTON::iBitmap (and TBBUTTONINFO::
+// iImage) references. SetPauseButton / SetSoundButton toggle between these
+// to flip the icon on state changes.
+static int s_idxPause  = 0;
+static int s_idxPlay   = 0;
+static int s_idxSound  = 0;
+static int s_idxMute   = 0;
+static int s_idxPen    = 0;
+static int s_idxNoDraw = 0;
+
+// Subclass for the toolbar, handling two things:
+//
+//   WM_ERASEBKGND — fill the client area with the standard 3D face color.
+//     On real Windows this is redundant (the opaque toolbar paints its own
+//     background during WM_PAINT anyway), but Wine's toolbar does not
+//     reliably fill the background, leaving the control transparent.
+//     Painting it here covers Wine without changing anything on real Windows.
+//
+//   WM_PAINT — chain to the original proc so it draws buttons/background,
+//     then draw a single-pixel raised line along the bottom via
+//     DrawEdge(BDR_RAISEDOUTER, BF_BOTTOM). This gives the classic
+//     early-2000s Win32 separator between toolbar and the content area
+//     below. The edge must be drawn AFTER the original paint because the
+//     original's button rendering would otherwise overwrite it.
+static LRESULT CALLBACK ToolbarSubclassProc(HWND hWnd, UINT msg,
+                                            WPARAM wParam, LPARAM lParam) {
+  if (msg == WM_ERASEBKGND) {
+    HDC hdc = reinterpret_cast<HDC>(wParam);
+    RECT rc;
+    GetClientRect(hWnd, &rc);
+    FillRect(hdc, &rc, reinterpret_cast<HBRUSH>(COLOR_3DFACE + 1));
+    return TRUE;
+  }
+  if (msg == WM_PAINT) {
+    // Let the toolbar's own paint do its buttons + themed background.
+    LRESULT result = CallWindowProc(s_origToolbarProc, hWnd, msg, wParam, lParam);
+    // Now stamp a raised edge around the client rect on top of whatever it
+    // drew. GetDC gives a fresh client DC outside the BeginPaint/EndPaint
+    // cycle that the original proc used — that's fine, we just need to
+    // draw a few lines and release.
+    HDC hdc = GetDC(hWnd);
+    if (hdc != nullptr) {
+      RECT rc;
+      GetClientRect(hWnd, &rc);
+      // BDR_RAISEDINNER — single-pixel highlight/shadow, subtler than BDR_RAISEDOUTER
+      // BF_BOTTOM restricts drawing to one edge.
+      DrawEdge(hdc, &rc, BDR_RAISEDINNER | BDR_RAISEDOUTER, BF_BOTTOM);
+
+      // Classic (non-FLAT) toolbars render TBSTYLE_SEP entries as blank
+      // gaps rather than visible dividers. Walk the button list ourselves
+      // and stamp an etched vertical line into each separator's rect so
+      // groups stay visually distinct.
+      const int count = static_cast<int>(
+          SendMessage(hWnd, TB_BUTTONCOUNT, 0, 0));
+      for (int i = 0; i < count; i++) {
+        TBBUTTON btn = {};
+        if (!SendMessage(hWnd, TB_GETBUTTON, i,
+                         reinterpret_cast<LPARAM>(&btn))) continue;
+        if (!(btn.fsStyle & TBSTYLE_SEP)) continue;
+        RECT ir;
+        if (!SendMessage(hWnd, TB_GETITEMRECT, i,
+                         reinterpret_cast<LPARAM>(&ir))) continue;
+        // A 2-pixel-wide rect centered in the separator, inset vertically
+        // by a couple pixels so the line doesn't touch the toolbar edges.
+        const int xMid = (ir.left + ir.right) / 2;
+        RECT lineRect = { xMid - 1, ir.top + 2, xMid + 1, ir.bottom - 2 };
+        // EDGE_ETCHED + BF_LEFT paints a sunken-outer / raised-inner pair
+        // along the left side of the rect, giving a 2-pixel etched line.
+        DrawEdge(hdc, &lineRect, EDGE_ETCHED, BF_LEFT);
+      }
+      ReleaseDC(hWnd, hdc);
+    }
+    return result;
+  }
+  return CallWindowProc(s_origToolbarProc, hWnd, msg, wParam, lParam);
+}
+
+// Creates the application's top toolbar as a child of hParent.
+//
+// A toolbar in Win32 is its own child window of class TOOLBARCLASSNAME
+// (provided by the Common Controls DLL). We populate it with buttons that
+// pull their images from a "bitmap strip" — a single wide bitmap where each
+// button's image is a fixed-size slice. The Common Controls DLL ships with
+// standard strips (new, open, save, cut/copy/paste, etc.) that any app can
+// use without shipping its own icon files. We use IDB_STD_SMALL_COLOR and
+// pick STD_FILESAVE (the floppy disk icon) from it.
+//
+// Button clicks arrive as WM_COMMAND messages to the parent, with wParam
+// low-word set to the button's idCommand. Here we map the save button to
+// IDM_SAVE_AS so it shares the existing menu handler — no duplicate code.
+void CreateAppToolbar(HWND hParent, HINSTANCE hInst) {
+  // Styles note — we deliberately do NOT use TBSTYLE_FLAT here. Per MSDN it
+  // makes the toolbar transparent, meaning the parent is responsible for
+  // painting the background. With WS_CLIPCHILDREN on our main window (which
+  // we need to keep parent painting out of the toolbar's rect), there is
+  // nothing to paint the background, so the area renders as whatever is in
+  // the surface — desktop on Win2000, black on XP+ under DWM. Without
+  // TBSTYLE_FLAT the toolbar is opaque: it paints its own background, which
+  // the theme engine on XP+ handles automatically (themed raised look), and
+  // Win2000 falls back to classic 3D raised shading.
+  //
+  // TBSTYLE_TOOLTIPS — show tooltip popups when the cursor hovers.
+  // CCS_TOP is the default (toolbar docks to top of parent) so we omit it.
+  HWND hTB = CreateWindowExW(
+      0, TOOLBARCLASSNAME, nullptr,
+      WS_CHILD | TBSTYLE_TOOLTIPS,
+      0, 0, CW_USEDEFAULT, CW_USEDEFAULT,
+      hParent, nullptr, hInst, nullptr);
+  if (hTB == nullptr) {
+    return;
+  }
+
+  // Tell the control which TBBUTTON layout we compiled against so it can
+  // adapt if this binary runs against a different Common Controls DLL version.
+  SendMessage(hTB, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+
+  // --- Bitmap loading ------------------------------------------------------
+  // Each TB_ADDBITMAP adds images to the toolbar's internal image list and
+  // returns the starting index of the images it just added. That index is
+  // what TBBUTTON::iBitmap refers to.
+  //
+  // First: the standard small-icon strip from comctl32, which gives us the
+  // built-in icons (STD_FILESAVE etc.). Standard strips are appended at
+  // index 0 here, so STD_FILESAVE's position in the strip is what iBitmap uses.
+  TBADDBITMAP tbab = {};
+  tbab.hInst = HINST_COMMCTRL;
+  tbab.nID   = IDB_STD_SMALL_COLOR;
+  SendMessage(hTB, TB_ADDBITMAP, 0, reinterpret_cast<LPARAM>(&tbab));
+
+  // Now our own single-image bitmaps from the app's resources. Each is
+  // appended to the same image list, so we capture the returned index to
+  // use when declaring the corresponding button. Pause/Play and Sound/Mute
+  // indices are stored in file-statics so SetPauseButton / SetSoundButton
+  // can swap between them on state changes.
+  tbab.hInst = hInst;
+  tbab.nID = IDB_PAUSE_BMP;
+  s_idxPause = static_cast<int>(
+      SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
+  tbab.nID = IDB_PLAY_BMP;
+  s_idxPlay = static_cast<int>(
+      SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
+  tbab.nID = IDB_PEN_BMP;
+  s_idxPen = static_cast<int>(
+      SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
+  tbab.nID = IDB_NODRAW_BMP;
+  s_idxNoDraw = static_cast<int>(
+      SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
+  tbab.nID = IDB_SOUND_BMP;
+  s_idxSound = static_cast<int>(
+      SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
+  tbab.nID = IDB_MUTE_BMP;
+  s_idxMute = static_cast<int>(
+      SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
+  tbab.nID = IDB_EXIT_BMP;
+  const int idxExit = static_cast<int>(
+      SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
+
+  // --- Buttons -------------------------------------------------------------
+  // TBBUTTON fields:
+  //   iBitmap   — index into the loaded image list (ignored for TBSTYLE_SEP)
+  //   idCommand — WM_COMMAND id sent when the button is clicked
+  //   fsState   — TBSTATE_ENABLED for clickable (0 for separators)
+  //   fsStyle   — TBSTYLE_BUTTON (push button) or TBSTYLE_SEP (gap)
+  //   dwData    — app-defined extra data we don't need
+  //   iString   — tooltip/label text pointer (cast through INT_PTR)
+  TBBUTTON tbButtons[9] = {};
+
+  tbButtons[0].iBitmap   = STD_FILESAVE;
+  tbButtons[0].idCommand = IDM_SAVE_AS;
+  tbButtons[0].fsState   = TBSTATE_ENABLED;
+  tbButtons[0].fsStyle   = TBSTYLE_BUTTON;
+  tbButtons[0].iString   = reinterpret_cast<INT_PTR>(L"Save As");
+
+  tbButtons[1].fsStyle   = TBSTYLE_SEP;
+
+  tbButtons[2].iBitmap   = s_idxPause;
+  tbButtons[2].idCommand = IDM_PAUSED;
+  tbButtons[2].fsState   = TBSTATE_ENABLED;
+  tbButtons[2].fsStyle   = TBSTYLE_BUTTON;
+  tbButtons[2].iString   = reinterpret_cast<INT_PTR>(L"Pause");
+
+  tbButtons[3].fsStyle   = TBSTYLE_SEP;
+
+  tbButtons[4].iBitmap   = s_idxPen;
+  tbButtons[4].idCommand = IDM_DRAW;
+  tbButtons[4].fsState   = TBSTATE_ENABLED;
+  tbButtons[4].fsStyle   = TBSTYLE_BUTTON | TBSTYLE_DROPDOWN;
+  tbButtons[4].iString   = reinterpret_cast<INT_PTR>(L"Draw");
+
+  tbButtons[5].fsStyle   = TBSTYLE_SEP;
+
+  tbButtons[6].iBitmap   = s_idxSound;
+  tbButtons[6].idCommand = IDM_SOUND;
+  tbButtons[6].fsState   = TBSTATE_ENABLED;
+  tbButtons[6].fsStyle   = TBSTYLE_BUTTON;
+  tbButtons[6].iString   = reinterpret_cast<INT_PTR>(L"Play Music");
+
+  tbButtons[7].fsStyle   = TBSTYLE_SEP;
+
+  tbButtons[8].iBitmap   = idxExit;
+  tbButtons[8].idCommand = IDM_EXIT;
+  tbButtons[8].fsState   = TBSTATE_ENABLED;
+  tbButtons[8].fsStyle   = TBSTYLE_BUTTON;
+  tbButtons[8].iString   = reinterpret_cast<INT_PTR>(L"Exit");
+
+  SendMessage(hTB, TB_ADDBUTTONS,
+              sizeof(tbButtons) / sizeof(tbButtons[0]),
+              reinterpret_cast<LPARAM>(tbButtons));
+
+  // Enable split-button dropdown arrows. Without this, TBSTYLE_DROPDOWN makes
+  // the entire button act as a dropdown and the button body stops sending a
+  // normal WM_COMMAND. With TBSTYLE_EX_DRAWDDARROWS, the arrow is rendered as
+  // a separate clickable region: clicking the button body still sends
+  // WM_COMMAND (idCommand = IDM_DRAW), while clicking the arrow sends
+  // TBN_DROPDOWN via WM_NOTIFY so the parent can pop up a custom menu.
+  SendMessage(hTB, TB_SETEXTENDEDSTYLE, 0, TBSTYLE_EX_DRAWDDARROWS);
+
+  // Install the subclass for Wine compatibility (see ToolbarSubclassProc).
+  // Real Windows ignores it because its WM_PAINT paints over what our
+  // WM_ERASEBKGND filled, but Wine needs it to avoid a transparent bar.
+  s_origToolbarProc = reinterpret_cast<WNDPROC>(
+      SetWindowLongPtr(hTB, GWLP_WNDPROC,
+                       reinterpret_cast<LONG_PTR>(ToolbarSubclassProc)));
+
+  // TB_AUTOSIZE tells the toolbar to re-measure itself based on its buttons
+  // and the parent's width. Required after adding/removing buttons and also
+  // on every parent resize (LayoutToolbar calls it again from WM_SIZE).
+  SendMessage(hTB, TB_AUTOSIZE, 0, 0);
+
+  // Buttons and layout are in place; show the toolbar now.
+  ShowWindow(hTB, SW_SHOW);
+
+  // Store the handle and measure the initial height. GetWindowRect returns
+  // screen coords, but for a toolbar docked at the top the height component
+  // is what we need regardless.
+  s_hToolbar = hTB;
+  RECT tbRect;
+  GetWindowRect(hTB, &tbRect);
+  g_toolbarHeight = tbRect.bottom - tbRect.top;
+}
+
+void LayoutToolbar(HWND hWnd) {
+  if (s_hToolbar == nullptr || hWnd == nullptr) {
+    return;
+  }
+  // Let the toolbar re-measure itself for the new parent width. We then re-read
+  // its height in case the row count changed (e.g. buttons wrapped onto a new
+  // row because the parent got narrower).
+  SendMessage(s_hToolbar, TB_AUTOSIZE, 0, 0);
+  RECT tbRect;
+  GetWindowRect(s_hToolbar, &tbRect);
+  g_toolbarHeight = tbRect.bottom - tbRect.top;
+}
+
+// TB_SETBUTTONINFO updates any subset of a TBBUTTON's fields by command ID.
+// dwMask picks which fields to apply; here we want the icon and the text.
+// The toolbar copies the text string internally, so passing a string literal
+// via const_cast is safe — the control won't mutate the memory we point at.
+void SetPauseButton(bool paused) {
+  if (s_hToolbar == nullptr) return;
+  TBBUTTONINFOW bi = {};
+  bi.cbSize  = sizeof(bi);
+  bi.dwMask  = TBIF_IMAGE | TBIF_TEXT;
+  bi.iImage  = paused ? s_idxPlay : s_idxPause;
+  bi.pszText = const_cast<LPWSTR>(paused ? L"Resume" : L"Pause");
+  SendMessage(s_hToolbar, TB_SETBUTTONINFOW, IDM_PAUSED,
+              reinterpret_cast<LPARAM>(&bi));
+}
+
+void SetSoundButton(bool playing) {
+  if (s_hToolbar == nullptr) return;
+  TBBUTTONINFOW bi = {};
+  bi.cbSize  = sizeof(bi);
+  bi.dwMask  = TBIF_IMAGE | TBIF_TEXT;
+  bi.iImage  = playing ? s_idxMute : s_idxSound;
+  bi.pszText = const_cast<LPWSTR>(playing ? L"Mute" : L"Music");
+  SendMessage(s_hToolbar, TB_SETBUTTONINFOW, IDM_SOUND,
+              reinterpret_cast<LPARAM>(&bi));
+}
+
+void SetDrawButton(bool drawing) {
+  if (s_hToolbar == nullptr) return;
+  TBBUTTONINFOW bi = {};
+  bi.cbSize  = sizeof(bi);
+  bi.dwMask  = TBIF_IMAGE | TBIF_TEXT;
+  bi.iImage  = drawing ? s_idxNoDraw : s_idxPen;
+  bi.pszText = const_cast<LPWSTR>(drawing ? L"Stop Draw" : L"Draw");
+  SendMessage(s_hToolbar, TB_SETBUTTONINFOW, IDM_DRAW,
+              reinterpret_cast<LPARAM>(&bi));
+}

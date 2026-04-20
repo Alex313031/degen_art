@@ -32,6 +32,16 @@ IDI_MAIN   ICON  "res/main.ico"
 IDI_SMALL  ICON  "res/small.ico"
 IDI_ABOUT  ICON  "res/about.ico"
 
+// Bitmaps
+IDB_PEN_BMP    BITMAP "res/pen.bmp"
+IDB_NODRAW_BMP BITMAP "res/nodraw.bmp"
+IDB_SHAPES_BMP BITMAP "res/shapes.bmp"
+IDB_PAUSE_BMP  BITMAP "res/pause.bmp"
+IDB_PLAY_BMP   BITMAP "res/play.bmp"
+IDB_EXIT_BMP   BITMAP "res/exit.bmp"
+IDB_SOUND_BMP  BITMAP "res/sound.bmp"
+IDB_MUTE_BMP   BITMAP "res/nosound.bmp"
+
 #ifdef APSTUDIO_INVOKED
 
 1 TEXTINCLUDE
@@ -91,9 +101,9 @@ BEGIN
         MENUITEM "&Use MonoChrome", IDM_MONOCHROME
         POPUP "&Background Color"
         BEGIN
-            MENUITEM "&White", IDM_WHITE_BKG
+            MENUITEM "&White", IDM_WHITE_BKG, CHECKED
             MENUITEM "&Black", IDM_BLACK_BKG
-            MENUITEM "&Grey",  IDM_GREY_BKG, CHECKED
+            MENUITEM "&Grey",  IDM_GREY_BKG
             MENUITEM "&Red",   IDM_RED_BKG
             MENUITEM "&Green", IDM_GREEN_BKG
             MENUITEM "&Blue",  IDM_BLUE_BKG

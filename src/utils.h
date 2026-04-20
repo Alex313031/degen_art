@@ -42,6 +42,10 @@ inline constexpr INT CW_HEIGHT = 640;
 inline constexpr INT MINWIDTH  = 192;
 inline constexpr INT MINHEIGHT = 192;
 
+extern int g_toolbarHeight; // Height of the top toolbar in pixels; 0 if none. Art canvas lives below it.
+
+extern COLORREF g_draw_color; // Pen color used while in draw mode; set by IDM_PICKCOLOR
+
 // Gets default settings from CHECKED state of menu items
 void InitMenuDefaults(HWND hWnd);
 
@@ -71,5 +75,27 @@ bool InfoBox(HWND hWnd, const std::wstring& title, const std::wstring& message);
 bool WarnBox(HWND hWnd, const std::wstring& title, const std::wstring& message);
 
 bool ErrorBox(HWND hWnd, const std::wstring& title, const std::wstring& message);
+
+// Creates the app's top toolbar as a child of hParent. Call once from
+// WM_CREATE. Stores the toolbar handle internally and measures the global
+// g_toolbarHeight so the rest of the app can offset the art canvas below it.
+void CreateAppToolbar(HWND hParent, HINSTANCE hInst);
+
+// Re-auto-sizes the toolbar to the parent's new width and re-measures its
+// height into g_toolbarHeight. Call from WM_SIZE. No-op if the toolbar
+// hasn't been created yet.
+void LayoutToolbar(HWND hWnd);
+
+// Swaps the IDM_PAUSED toolbar button's icon+label between "Pause" (paint
+// running) and "Play" (paint paused). Call after toggling g_paused.
+void SetPauseButton(bool paused);
+
+// Swaps the IDM_SOUND toolbar button's icon+label between "Music On" (silent,
+// click to start) and "Mute" (playing, click to stop). Call after ToggleSound.
+void SetSoundButton(bool playing);
+
+// Swaps the IDM_DRAW toolbar button's icon+label between "Draw" (idle) and
+// "Stop Draw" (draw mode active). Call after toggling g_draw_mode.
+void SetDrawButton(bool drawing);
 
 #endif // DEGENART_UTILS_H_

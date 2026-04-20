@@ -49,118 +49,6 @@ COLORREF g_draw_color = RGB_BLACK;
 static bool s_drawing        = false;
 static POINT s_lastDraw      = {};
 
-// Toolbar state. g_hToolbar is the child window handle; g_toolbarHeight is
-// measured after creation so the rest of the app knows how much vertical
-// space the art canvas needs to avoid.
-static HWND g_hToolbar = nullptr;
-int g_toolbarHeight    = 0;
-
-// Saved original toolbar WndProc so our subclass can chain through to it.
-static WNDPROC s_origToolbarProc = nullptr;
-
-// Minimal subclass for the toolbar: on WM_ERASEBKGND, fill the client area
-// with the standard 3D face color. On real Windows this is redundant because
-// the opaque toolbar paints its own background during WM_PAINT anyway, but
-// Wine's toolbar implementation does not reliably fill the background, so
-// the control comes out transparent. Painting it ourselves here covers Wine
-// without changing anything visible on real Windows.
-static LRESULT CALLBACK ToolbarSubclassProc(HWND hWnd, UINT msg,
-                                            WPARAM wParam, LPARAM lParam) {
-  if (msg == WM_ERASEBKGND) {
-    HDC hdc = reinterpret_cast<HDC>(wParam);
-    RECT rc;
-    GetClientRect(hWnd, &rc);
-    FillRect(hdc, &rc, reinterpret_cast<HBRUSH>(COLOR_3DFACE + 1));
-    return TRUE;
-  }
-  return CallWindowProc(s_origToolbarProc, hWnd, msg, wParam, lParam);
-}
-
-// Creates the application's top toolbar as a child of hParent.
-//
-// A toolbar in Win32 is its own child window of class TOOLBARCLASSNAME
-// (provided by the Common Controls DLL). We populate it with buttons that
-// pull their images from a "bitmap strip" — a single wide bitmap where each
-// button's image is a fixed-size slice. The Common Controls DLL ships with
-// standard strips (new, open, save, cut/copy/paste, etc.) that any app can
-// use without shipping its own icon files. We use IDB_STD_SMALL_COLOR and
-// pick STD_FILESAVE (the floppy disk icon) from it.
-//
-// Button clicks arrive as WM_COMMAND messages to the parent, with wParam
-// low-word set to the button's idCommand. Here we map the save button to
-// IDM_SAVE_AS so it shares the existing menu handler — no duplicate code.
-static HWND CreateAppToolbar(HWND hParent) {
-  // Styles note — we deliberately do NOT use TBSTYLE_FLAT here. Per MSDN it
-  // makes the toolbar transparent, meaning the parent is responsible for
-  // painting the background. With WS_CLIPCHILDREN on our main window (which
-  // we need to keep parent painting out of the toolbar's rect), there is
-  // nothing to paint the background, so the area renders as whatever is in
-  // the surface — desktop on Win2000, black on XP+ under DWM. Without
-  // TBSTYLE_FLAT the toolbar is opaque: it paints its own background, which
-  // the theme engine on XP+ handles automatically (themed raised look), and
-  // Win2000 falls back to classic 3D raised shading.
-  //
-  // TBSTYLE_TOOLTIPS — show tooltip popups when the cursor hovers.
-  // CCS_TOP is the default (toolbar docks to top of parent) so we omit it.
-  HWND hTB = CreateWindowExW(
-      WS_EX_WINDOWEDGE, TOOLBARCLASSNAME, nullptr,
-      WS_CHILD | TBSTYLE_TOOLTIPS,
-      0, 0, CW_USEDEFAULT, CW_USEDEFAULT,
-      hParent, nullptr, g_hInstance, nullptr);
-  if (hTB == nullptr) {
-    return nullptr;
-  }
-
-  // Load the standard small-icon bitmap strip out of the Common Controls DLL.
-  // HINST_COMMCTRL is a special "instance" sentinel meaning "look in comctl32".
-  // After this call, the strip's images are available to this toolbar, and
-  // iBitmap values like STD_FILESAVE index directly into it.
-  TBADDBITMAP tbab = {};
-  tbab.hInst = HINST_COMMCTRL;
-  tbab.nID   = IDB_STD_SMALL_COLOR;
-  SendMessage(hTB, TB_ADDBITMAP, 0, reinterpret_cast<LPARAM>(&tbab));
-
-  // Define the buttons. Each TBBUTTON entry has:
-  //   iBitmap   — index into the loaded bitmap strip (STD_FILESAVE = floppy)
-  //   idCommand — the WM_COMMAND id sent when the button is clicked
-  //   fsState   — initial state flags (TBSTATE_ENABLED makes it clickable)
-  //   fsStyle   — button kind (BTNS_BUTTON is a plain push button)
-  //   dwData    — app-defined extra data we don't need
-  //   iString   — tooltip/label string index; -1 means no text label here
-  TBBUTTON tbButtons[1] = {};
-  tbButtons[0].iBitmap   = STD_FILESAVE;
-  tbButtons[0].idCommand = IDM_SAVE_AS;
-  tbButtons[0].fsState   = TBSTATE_ENABLED;
-  tbButtons[0].fsStyle   = TBSTYLE_BUTTON;
-  tbButtons[0].iString   = reinterpret_cast<INT_PTR>(L"Save As");
-
-  // Toolbars exist in multiple versions across Common Controls releases. This
-  // tells the control which TBBUTTON layout we compiled against so it can
-  // adapt if this binary runs against a different DLL version.
-  SendMessage(hTB, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
-  // Add buttons
-  SendMessage(hTB, TB_ADDBUTTONS,
-              sizeof(tbButtons) / sizeof(tbButtons[0]),
-              reinterpret_cast<LPARAM>(tbButtons));
-
-  // Install the subclass for Wine compatibility (see ToolbarSubclassProc).
-  // Real Windows ignores this because its WM_PAINT paints over what our
-  // WM_ERASEBKGND filled, but Wine needs this to avoid a transparent bar.
-  s_origToolbarProc = reinterpret_cast<WNDPROC>(
-      SetWindowLongPtr(hTB, GWLP_WNDPROC,
-                       reinterpret_cast<LONG_PTR>(ToolbarSubclassProc)));
-
-  // TB_AUTOSIZE tells the toolbar to re-measure itself based on its buttons
-  // and the parent's width. Required after adding/removing buttons and also
-  // on every parent resize (we call it again from WM_SIZE below).
-  SendMessage(hTB, TB_AUTOSIZE, 0, 0);
-
-  // Buttons and layout are in place; show the toolbar now.
-  ShowWindow(hTB, SW_SHOW);
-
-  return hTB;
-}
-
 int APIENTRY wWinMain(HINSTANCE hInstance,
                       HINSTANCE hPrevInstance,
                       LPWSTR lpCmdLine,
@@ -170,7 +58,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
   // Initialize common controls
   INITCOMMONCONTROLSEX icex;
   icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
-  icex.dwICC  = ICC_STANDARD_CLASSES | ICC_WIN95_CLASSES;
+  icex.dwICC  = ICC_STANDARD_CLASSES | ICC_BAR_CLASSES;
   InitCommonControlsEx(&icex);
 
   static const LPCWSTR appTitle = APP_NAME;
@@ -266,15 +154,11 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       // with a full-size bitmap matched to the window.
       g_hdcMem = CreateCompatibleDC(nullptr);
       // Build the toolbar before InitMenuDefaults so any future toolbar-driven
-      // default reading could work, and before InitApp so cyClient computed in
-      // the first WM_SIZE already excludes the toolbar height.
-      g_hToolbar = CreateAppToolbar(hWnd);
-      if (g_hToolbar != nullptr) {
-        // GetWindowRect returns screen coords; we only need the height.
-        RECT tbRect;
-        GetWindowRect(g_hToolbar, &tbRect);
-        g_toolbarHeight = tbRect.bottom - tbRect.top;
-      }
+      // default reading could work, and before InitApp so cyClient computed
+      // in the first WM_SIZE already excludes the toolbar height.
+      // CreateAppToolbar (utils.cc) stores the handle internally and sets
+      // g_toolbarHeight; we don't need the handle here.
+      CreateAppToolbar(hWnd, g_hInstance);
       InitMenuDefaults(hWnd);
       InitApp(hWnd);
       break;
@@ -331,15 +215,10 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       break;
     }
     case WM_SIZE: {
-      // Let the toolbar re-measure itself for the new parent width. After this
-      // the toolbar fills the top strip; we re-read its height in case the
-      // row count changed (e.g. buttons wrapping).
-      if (g_hToolbar != nullptr) {
-        SendMessage(g_hToolbar, TB_AUTOSIZE, 0, 0);
-        RECT tbRect;
-        GetWindowRect(g_hToolbar, &tbRect);
-        g_toolbarHeight = tbRect.bottom - tbRect.top;
-      }
+      // Let the toolbar re-fit the new parent width and re-measure its height.
+      // All toolbar state lives in utils.cc; this one call updates
+      // g_toolbarHeight as needed.
+      LayoutToolbar(hWnd);
       // cxClient / cyClient represent the ART canvas, not the parent's client
       // area — the toolbar isn't drawable space. Clamp to zero when the
       // window is smaller than the toolbar (minimized / extreme resize).
@@ -352,6 +231,39 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       RecreateBackBuffer(hWnd, cxClient, cyClient);
       break;
     }
+    case WM_NOTIFY: {
+      // Toolbar dropdown buttons (TBSTYLE_DROPDOWN + TBSTYLE_EX_DRAWDDARROWS)
+      // send TBN_DROPDOWN when the user clicks the arrow. We handle it for
+      // IDM_DRAW by popping up a small color menu anchored under the button.
+      // lParam points to an NMTOOLBAR whose rcButton is in toolbar-client
+      // coords — ClientToScreen on the toolbar's HWND (hdr.hwndFrom) gives
+      // the screen-coord anchor TrackPopupMenu wants.
+      LPNMHDR pnmh = reinterpret_cast<LPNMHDR>(lParam);
+      if (pnmh->code == TBN_DROPDOWN) {
+        LPNMTOOLBAR pnmtb = reinterpret_cast<LPNMTOOLBAR>(lParam);
+        if (pnmtb->iItem == IDM_DRAW) {
+          POINT pt = { pnmtb->rcButton.left, pnmtb->rcButton.bottom };
+          ClientToScreen(pnmh->hwndFrom, &pt);
+          HMENU hMenu = CreatePopupMenu();
+          AppendMenuW(hMenu, MF_STRING, IDM_DRAW_WHITE, L"White");
+          AppendMenuW(hMenu, MF_STRING, IDM_DRAW_BLACK, L"Black");
+          AppendMenuW(hMenu, MF_STRING, IDM_DRAW_RED,   L"Red");
+          AppendMenuW(hMenu, MF_STRING, IDM_DRAW_GREEN, L"Green");
+          AppendMenuW(hMenu, MF_STRING, IDM_DRAW_BLUE,  L"Blue");
+          AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+          AppendMenuW(hMenu, MF_STRING, IDM_PICKCOLOR, L"Pick Color...");
+          // TrackPopupMenu dispatches any selection as a WM_COMMAND to hWnd,
+          // which lands in the cases below / the existing IDM_PICKCOLOR handler.
+          TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_TOPALIGN,
+                         pt.x, pt.y, 0, hWnd, nullptr);
+          DestroyMenu(hMenu);
+          // TBDDRET_DEFAULT tells the toolbar we handled the notification so
+          // it doesn't also try to show a default (empty) dropdown.
+          return TBDDRET_DEFAULT;
+        }
+      }
+      break;
+    }
     case WM_COMMAND: {
       const int command = LOWORD(wParam);
       switch (command) {
@@ -359,6 +271,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           ShutDownApp();
           break;
         case IDM_ABOUT:
+          PlaySoundW(L"SystemNotification", nullptr, SND_ASYNC);
           DialogBox(g_hInstance, MAKEINTRESOURCE(IDD_ABOUTDLG), hWnd, AboutDlgProc);
           break;
         case IDM_HELP:
@@ -371,6 +284,15 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           // Open the color picker; g_draw_color is updated on success.
           PickColor(hWnd);
           break;
+        // Quick-pick colors from the Draw button's dropdown menu. These
+        // set g_draw_color directly so the user can change the stroke color
+        // without opening the full picker. IDM_PICKCOLOR above handles the
+        // "Pick Color..." item at the bottom of that same dropdown.
+        case IDM_DRAW_WHITE: g_draw_color = RGB_WHITE; break;
+        case IDM_DRAW_BLACK: g_draw_color = RGB_BLACK; break;
+        case IDM_DRAW_RED:   g_draw_color = RGB_RED;   break;
+        case IDM_DRAW_GREEN: g_draw_color = RGB_GREEN; break;
+        case IDM_DRAW_BLUE:  g_draw_color = RGB_BLUE;  break;
         case IDM_DRAW: {
           // Toggle free-draw mode. While on, left-click + drag paints into the
           // back buffer instead of moving the window. On activation we also
@@ -381,10 +303,14 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           HMENU hEdit = GetSubMenu(GetMenu(hWnd), 1);
           CheckMenuItem(hEdit, IDM_DRAW,
                         MF_BYCOMMAND | (g_draw_mode ? MF_CHECKED : MF_UNCHECKED));
+          // Mirror the state on the toolbar: swap icon + label.
+          SetDrawButton(g_draw_mode);
           if (g_draw_mode && !g_paused) {
             TogglePaintArt(hWnd);
             HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
             CheckMenuItem(hSettings, IDM_PAUSED, MF_BYCOMMAND | MF_CHECKED);
+            // Mirror the paused state onto the toolbar's Pause/Play button.
+            SetPauseButton(g_paused);
           }
           // If a stroke happened to be in progress (unlikely), cancel it so
           // we don't leak capture when leaving draw mode.
@@ -400,6 +326,8 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
             HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
             CheckMenuItem(hSettings, IDM_SOUND,
                           MF_BYCOMMAND | (g_playsound ? MF_CHECKED : MF_UNCHECKED));
+            // Mirror the state on the toolbar: swap icon + label.
+            SetSoundButton(g_playsound);
           }
           break;
         }
@@ -409,6 +337,8 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
           CheckMenuItem(hSettings, IDM_PAUSED,
                         MF_BYCOMMAND | (g_paused ? MF_CHECKED : MF_UNCHECKED));
+          // Mirror the state on the toolbar: swap icon + label.
+          SetPauseButton(g_paused);
           // Painting and drawing are mutually exclusive — if we just resumed
           // painting, exit draw mode so the user can't be in both at once.
           // Also clean up any in-progress stroke so capture isn't stranded.
@@ -416,6 +346,8 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
             g_draw_mode = false;
             HMENU hEdit = GetSubMenu(GetMenu(hWnd), 1);
             CheckMenuItem(hEdit, IDM_DRAW, MF_BYCOMMAND | MF_UNCHECKED);
+            // Mirror the state on the toolbar: revert icon + label.
+            SetDrawButton(false);
             if (s_drawing) {
               s_drawing = false;
               ReleaseCapture();
@@ -780,10 +712,15 @@ bool InitApp(HWND hWnd) {
   // Keeps behavior RC-driven: toggling the CHECKED flag in degen_art.rc is the
   // only change needed to opt in or out of auto-play.
   HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
+  bool ok = true;
   if (GetMenuState(hSettings, IDM_SOUND, MF_BYCOMMAND) & MF_CHECKED) {
-    return PlayWavFile(sound_file);
+    ok = PlayWavFile(sound_file);
   }
-  return true;
+  // Sync the toolbar's sound button icon/label with g_playsound — the button
+  // was created in its "Music On" state; if auto-play kicked in above we
+  // need it flipped to "Mute".
+  SetSoundButton(g_playsound);
+  return ok;
 }
 
 bool LaunchHelp(HWND hWnd) {
@@ -795,8 +732,12 @@ bool LaunchHelp(HWND hWnd) {
 
 INT_PTR CALLBACK AboutDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
   UNREFERENCED_PARAMETER(lParam);
+  static const HICON kAboutIcon = LoadIcon(g_hInstance, MAKEINTRESOURCE(IDI_ABOUT));
   switch (message) {
     case WM_INITDIALOG:
+      // Set icon in titlebar of about dialog
+      SendMessageW(hDlg, WM_SETICON, ICON_SMALL, (LPARAM)kAboutIcon);
+      SendMessageW(hDlg, WM_SETICON, ICON_BIG, (LPARAM)kAboutIcon);
       return TRUE;
     case WM_COMMAND:
       if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL) {

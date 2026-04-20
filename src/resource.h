@@ -9,11 +9,21 @@
 #define IDI_SMALL                   102 /* Small 16x16 icon */
 #define IDI_ABOUT                   103 /* About Dialog icon */
 
+/* Bitmaps */
+#define IDB_PEN_BMP                 104 /* "Pen" icon for toolbar strip */
+#define IDB_NODRAW_BMP              105 /* "Pen X" icon for toolbar strip, overwrites Pen icon when needed */
+#define IDB_SHAPES_BMP              106 /* "Shapes" icon for toolbar strip */
+#define IDB_PAUSE_BMP               107 /* "Pause" icon for toolbar strip */
+#define IDB_PLAY_BMP                108 /* "Play" icon for toolbar strip, overwrites Pause icon when needed */
+#define IDB_EXIT_BMP                109 /* "Exit" icon for toolbar strip */
+#define IDB_SOUND_BMP               110 /* "Speaker" icon for toolbar strip */
+#define IDB_MUTE_BMP                111 /* "Mute" icon for toolbar strip, overwrites Speaker icon when needed */
+
 /* Main application resource, also used to attach menu */
-#define IDC_MAIN                    106
+#define IDC_MAIN                    133
 
 /* Dialogs */
-#define IDD_ABOUTDLG                108
+#define IDD_ABOUTDLG                150
 
 /* Menu items */
 #define IDM_ABOUT                   200
@@ -56,7 +66,7 @@
 #define IDM_CONC_4                  224
 
 // Whether bezier curves are enabled
-#define IDM_BEZIERS                 225\
+#define IDM_BEZIERS                 225
 
 // Whether lines are enabled
 #define IDM_LINES                   226
@@ -73,6 +83,13 @@
 
 // Global color picker, for various functions
 #define IDM_PICKCOLOR               230
+
+// Draw-color quick-pick items shown in the IDM_DRAW toolbar dropdown
+#define IDM_DRAW_WHITE              231
+#define IDM_DRAW_BLACK              232
+#define IDM_DRAW_RED                233
+#define IDM_DRAW_GREEN              234
+#define IDM_DRAW_BLUE               235
 
 // Dev menu items
 #define IDM_TESTTRAP                250

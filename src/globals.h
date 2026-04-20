@@ -14,7 +14,6 @@ extern volatile bool g_paused;  // Keep track of paused state. PauseArt() uses t
 
 extern CRITICAL_SECTION g_paintCS; // For thread sync on back buffer access
 
-extern HANDLE g_hDrawEvent; // Signalled by WM_TIMER each tick to wake the art thread
 
 extern COLORREF g_bkg_color; // Current background color, changed via the Background Color menu
 

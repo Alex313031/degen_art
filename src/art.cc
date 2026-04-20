@@ -18,19 +18,29 @@ volatile UINT g_num_shapes = 1; // Initialize to 1, in case something goes wrong
 
 unsigned long g_delay = 500UL; // Default to same as .rc file (IDM_FAST)
 
+// --- Thread pool state ----------------------------------------------------
+// Each live art thread has its own auto-reset "tick" event and an exit flag.
+// WM_TIMER (via SignalArtTick) calls SetEvent on exactly s_activeCount of
+// these every tick, so each thread wakes once per tick and draws ONE shape.
+// This keeps total shapes-per-tick == thread count (== g_num_shapes), and
+// lets us dynamically spawn/terminate individual threads when the user
+// changes the Concurrent Shapes setting.
+struct ArtThreadSlot {
+  HANDLE        hThread       = nullptr;
+  HANDLE        hTickEvent    = nullptr; // auto-reset; SetEvent = "go draw"
+  volatile bool exitRequested = false;   // set true to make thread exit cleanly
+};
+static ArtThreadSlot s_slots[kMaxArtThreads];
+static int           s_activeCount = 0;  // only touched from the main thread
+
 DWORD WINAPI ArtThread(LPVOID pvoid) {
-  UNREFERENCED_PARAMETER(pvoid);
-  if (mainHwnd == nullptr) {
+  ArtThreadSlot* slot = static_cast<ArtThreadSlot*>(pvoid);
+  if (mainHwnd == nullptr || slot == nullptr) {
     return 0x00000001;
   }
-  int xLeft   = 0;
-  int xRight  = 0;
-  int yTop    = 0;
-  int yBottom = 0;
-  int iRed   = 0;
-  int iGreen = 0;
-  int iBlue  = 0;
-
+  // Every thread owns its own drawing scratch state and RNG / distributions.
+  // Nothing here is shared, so none of it needs synchronization; the shared
+  // state (g_hdcMem, the back buffer bitmap) is protected by g_paintCS below.
   HBRUSH hBrush      = nullptr;
   // BLACK_PEN is a stock GDI object (always available, never needs DeleteObject).
   // We save it here so we can restore it into the DC after each shape, which is
@@ -58,164 +68,114 @@ DWORD WINAPI ArtThread(LPVOID pvoid) {
   std::uniform_int_distribution<int> monoDist(0, 2);
   // Line direction picker: 0=horizontal, 1=vertical, 2=diag "\", 3=diag "/".
   std::uniform_int_distribution<int> dirDist(0, 3);
-  while (g_running) {
-    const unsigned int num_shapes = g_num_shapes;
-    // Block until WM_TIMER signals g_hDrawEvent. The event is auto-reset, so
-    // it returns to non-signalled immediately after this call returns, making
-    // the thread wait again on the next iteration. If g_hDrawEvent is null
-    // (shutdown race), exit cleanly.
-    if (g_hDrawEvent == nullptr ||
-        WaitForSingleObject(g_hDrawEvent, INFINITE) != WAIT_OBJECT_0) {
+
+  int xLeft = 0, xRight = 0, yTop = 0, yBottom = 0;
+  int iRed  = 0, iGreen = 0, iBlue = 0;
+
+  while (true) {
+    // Block until SignalArtTick signals this slot's private event. Auto-reset,
+    // so it returns to non-signalled immediately and we block again on the
+    // next iteration. Any failure / spurious wake exits the thread.
+    if (slot->hTickEvent == nullptr ||
+        WaitForSingleObject(slot->hTickEvent, INFINITE) != WAIT_OBJECT_0) {
       break;
     }
-    if (!g_running) break; // event was signalled to unblock shutdown
+    // Two exit paths: global shutdown OR this individual slot was asked to die
+    // (EnsureThreadCount shrinking the pool).
+    if (!g_running || slot->exitRequested) break;
     if (cxClient == 0 && cyClient == 0) {
       continue; // Window is minimized; wait for restore
     }
-    // Acquire the critical section before touching g_hdcMem. The main thread
-    // also holds this lock in WM_PAINT and RecreateBackBuffer, so this ensures
-    // we never draw into the back buffer while it is being read or replaced.
+
+    // Serialize every GDI operation on the back buffer — multiple art threads
+    // can be inside this section trying to enter at the same time, and the
+    // main thread also grabs it in WM_PAINT and RecreateBackBuffer.
     EnterCriticalSection(&g_paintCS);
     if (g_hdcMem != nullptr) {
-      // Rebuild distributions each iteration in case the window was resized
-      // while we were sleeping, changing cxClient/cyClient.
       std::uniform_int_distribution<int> xDist(0, cxClient - 1);
       std::uniform_int_distribution<int> yDist(0, cyClient - 1);
-      for (unsigned int i = 0; i < num_shapes; i++) {
-        // Randomize positions
-        xLeft   = xDist(rng);
-        xRight  = xDist(rng);
-        yTop    = yDist(rng);
-        yBottom = yDist(rng);
-        // Randomize fill color
-        if (g_monochrome) {
-          // A single random value applied to all channels gives a gray shade
-          // uniformly distributed between pure black and pure white.
-          iRed = iGreen = iBlue = colorDist(rng);
-        } else {
-          iRed    = colorDist(rng);
-          iGreen  = colorDist(rng);
-          iBlue   = colorDist(rng);
-        }
-        // Determine outline color
-        COLORREF outlineColor;
-        if (g_monochrome) {
-          // Dark-to-mid gray (0-128) → white outline; light gray (129-255) →
-          // black outline. iRed == iGreen == iBlue in monochrome mode so any
-          // channel works as the brightness value.
-          outlineColor = (iRed <= 128) ? RGB_WHITE : RGB_BLACK;
-        } else {
-          // Complementary color: invert each channel, maximizing contrast.
-          outlineColor = RGB(255 - iRed, 255 - iGreen, 255 - iBlue);
-        }
-        HPEN hPen = CreatePen(PS_SOLID, 1, outlineColor);
-        hBrush    = CreateSolidBrush(RGB(iRed, iGreen, iBlue));
-        // SelectObject makes the pen/brush active in the DC. The shape drawing
-        // functions below will use whatever pen and brush are currently selected.
-        SelectObject(g_hdcMem, hPen);
-        SelectObject(g_hdcMem, hBrush);
-        // Determine shape type for this individual shape. g_circles and g_both
-        // are read fresh each iteration so menu changes take effect immediately
-        // without restarting the thread.
-        // - IDM_BOTH:       coin toss per shape
-        // - IDM_ELLIPSES:   g_circles=true,  g_both=false → always ellipse
-        // - IDM_RECTANGLES: g_circles=false, g_both=false → always rectangle
-        const bool use_ellipse = g_both ? (coinDist(rng) != 0) : g_circles;
-        // Only use beziers if enabled, with a 1-in-6 chance per shape.
-        // diceDist yields 0..5 uniformly, so matching 0 gives exactly 1/6.
-        // lineDiceDist yields 0..4, giving lines a slightly higher 1/5 chance.
-        const bool use_beziers = g_beziers ? (diceDist(rng) == 0)     : false;
-        const bool use_lines   = g_lines   ? (lineDiceDist(rng) == 0) : false;
-        // Draw the shape into the back buffer (g_hdcMem), not the screen.
-        // min/max ensure the coordinates are top-left/bottom-right regardless
-        // of which random value ended up larger.
-        if (use_ellipse) {
-          Ellipse(g_hdcMem, std::min(xLeft, xRight), std::min(yTop, yBottom),
-                  std::max(xLeft, xRight), std::max(yTop, yBottom));
-        } else {
-          Rectangle(g_hdcMem, std::min(xLeft, xRight), std::min(yTop, yBottom),
-                    std::max(xLeft, xRight), std::max(yTop, yBottom));
-        }
-        // Now draw a random bezier on top, if this iteration rolled one in.
-        // A single cubic Bezier is defined by 4 points:
-        //   [0] = start, [1] = first control, [2] = second control, [3] = end.
-        // All four are drawn from xDist/yDist so they stay inside the client
-        // area. The bezier pen's color is chosen from a small fixed palette
-        // so curves stand out cleanly instead of disappearing into the busy
-        // random-color shape field below them.
-        if (use_beziers) {
-          const COLORREF bezColor = customPalette[g_monochrome ? monoDist(rng) : paletteDist(rng)];
-          HPEN hBezierPen = CreatePen(PS_SOLID, 1, bezColor);
-          SelectObject(g_hdcMem, hBezierPen);
-          const POINT pointArray[4] = {
-            { xDist(rng), yDist(rng) },
-            { xDist(rng), yDist(rng) },
-            { xDist(rng), yDist(rng) },
-            { xDist(rng), yDist(rng) },
-          };
-          PolyBezier(g_hdcMem, pointArray, static_cast<DWORD>(4));
-          // Put the outline pen back so the cleanup below can delete the
-          // bezier pen safely (a pen currently selected into a DC must not be
-          // passed to DeleteObject).
-          SelectObject(g_hdcMem, hPen);
-          DeleteObject(hBezierPen);
-        }
-        // Draw a random straight line on top, same 1-in-6 gating as beziers.
-        // Lines need just a start and end point. MoveToEx updates the DC's
-        // current pen position (the last nullptr means we don't care about the
-        // previous position); LineTo draws from there to (x1, y1) using the
-        // currently selected pen.
-        // Lines are constrained to horizontal, vertical, or the two 45° diagonals.
-        // For the diagonals, a 45° angle means |dx| == |dy|, so we reuse the
-        // same signed delta for both axes (sign flipped for the "/" direction).
-        if (use_lines) {
-          const COLORREF lineColor = customPalette[g_monochrome ? monoDist(rng) : paletteDist(rng)];
-          HPEN hLinesPen = CreatePen(PS_SOLID, 1, lineColor);
-          SelectObject(g_hdcMem, hLinesPen);
-          const int x0 = xDist(rng);
-          const int y0 = yDist(rng);
-          int x1 = x0;
-          int y1 = y0;
-          switch (dirDist(rng)) {
-            case 0: // horizontal: y stays, x moves
-              x1 = xDist(rng);
-              break;
-            case 1: // vertical: x stays, y moves
-              y1 = yDist(rng);
-              break;
-            case 2: { // diagonal "\" — dy == dx
-              const int d = xDist(rng) - x0;
-              x1 = x0 + d;
-              y1 = y0 + d;
-              break;
-            }
-            case 3: { // diagonal "/" — dy == -dx
-              const int d = xDist(rng) - x0;
-              x1 = x0 + d;
-              y1 = y0 - d;
-              break;
-            }
-            default:
-              LOG(ERROR) << L"distribution out of range!";
-              break;
-          }
-          MoveToEx(g_hdcMem, x0, y0, nullptr);
-          LineTo(g_hdcMem, x1, y1);
-          SelectObject(g_hdcMem, hPen);
-          DeleteObject(hLinesPen);
-        }
-        // Restore the stock pen before deleting ours. A GDI object must not be
-        // deleted while it is still selected into a DC.
-        SelectObject(g_hdcMem, hOldPen);
-        DeleteObject(hPen);
-        DeleteObject(hBrush);
+
+      // --- Draw exactly ONE shape ----------------------------------------
+      xLeft   = xDist(rng);
+      xRight  = xDist(rng);
+      yTop    = yDist(rng);
+      yBottom = yDist(rng);
+      if (g_monochrome) {
+        iRed = iGreen = iBlue = colorDist(rng);
+      } else {
+        iRed    = colorDist(rng);
+        iGreen  = colorDist(rng);
+        iBlue   = colorDist(rng);
       }
-      // Present the back buffer to the screen. BitBlt does a direct pixel copy
-      // (SRCCOPY) of the entire back buffer onto the window's DC. GetDC/ReleaseDC
-      // bracket all direct drawing to the window outside of WM_PAINT.
+      COLORREF outlineColor;
+      if (g_monochrome) {
+        outlineColor = (iRed <= 128) ? RGB_WHITE : RGB_BLACK;
+      } else {
+        outlineColor = RGB(255 - iRed, 255 - iGreen, 255 - iBlue);
+      }
+      HPEN hPen = CreatePen(PS_SOLID, 1, outlineColor);
+      hBrush    = CreateSolidBrush(RGB(iRed, iGreen, iBlue));
+      SelectObject(g_hdcMem, hPen);
+      SelectObject(g_hdcMem, hBrush);
+
+      const bool use_ellipse = g_both ? (coinDist(rng) != 0) : g_circles;
+      const bool use_beziers = g_beziers ? (diceDist(rng) == 0)     : false;
+      const bool use_lines   = g_lines   ? (lineDiceDist(rng) == 0) : false;
+
+      if (use_ellipse) {
+        Ellipse(g_hdcMem, std::min(xLeft, xRight), std::min(yTop, yBottom),
+                std::max(xLeft, xRight), std::max(yTop, yBottom));
+      } else {
+        Rectangle(g_hdcMem, std::min(xLeft, xRight), std::min(yTop, yBottom),
+                  std::max(xLeft, xRight), std::max(yTop, yBottom));
+      }
+
+      if (use_beziers) {
+        const COLORREF bezColor = customPalette[g_monochrome ? monoDist(rng) : paletteDist(rng)];
+        HPEN hBezierPen = CreatePen(PS_SOLID, 1, bezColor);
+        SelectObject(g_hdcMem, hBezierPen);
+        const POINT pointArray[4] = {
+          { xDist(rng), yDist(rng) },
+          { xDist(rng), yDist(rng) },
+          { xDist(rng), yDist(rng) },
+          { xDist(rng), yDist(rng) },
+        };
+        PolyBezier(g_hdcMem, pointArray, static_cast<DWORD>(4));
+        SelectObject(g_hdcMem, hPen);
+        DeleteObject(hBezierPen);
+      }
+
+      if (use_lines) {
+        const COLORREF lineColor = customPalette[g_monochrome ? monoDist(rng) : paletteDist(rng)];
+        HPEN hLinesPen = CreatePen(PS_SOLID, 1, lineColor);
+        SelectObject(g_hdcMem, hLinesPen);
+        const int x0 = xDist(rng);
+        const int y0 = yDist(rng);
+        int x1 = x0;
+        int y1 = y0;
+        switch (dirDist(rng)) {
+          case 0: x1 = xDist(rng); break;                                 // horizontal
+          case 1: y1 = yDist(rng); break;                                 // vertical
+          case 2: { const int d = xDist(rng) - x0; x1 = x0 + d; y1 = y0 + d; break; } // "\"
+          case 3: { const int d = xDist(rng) - x0; x1 = x0 + d; y1 = y0 - d; break; } // "/"
+          default: LOG(ERROR) << L"distribution out of range!"; break;
+        }
+        MoveToEx(g_hdcMem, x0, y0, nullptr);
+        LineTo(g_hdcMem, x1, y1);
+        SelectObject(g_hdcMem, hPen);
+        DeleteObject(hLinesPen);
+      }
+
+      SelectObject(g_hdcMem, hOldPen);
+      DeleteObject(hPen);
+      DeleteObject(hBrush);
+      // --- /shape --------------------------------------------------------
+
+      // Present the back buffer. With N threads each doing a BitBlt per tick
+      // this is N blits instead of 1, but BitBlt is cheap and the result is
+      // the same (each blit shows the current state of the accumulated back
+      // buffer — later blits just reveal whatever later threads drew).
       hdc = GetDC(mainHwnd);
-      // Offset destination by g_toolbarHeight so the canvas sits below the
-      // toolbar. Back buffer coords remain art-local (start at 0,0).
       BitBlt(hdc, 0, g_toolbarHeight, cxClient, cyClient, g_hdcMem, 0, 0, SRCCOPY);
       ReleaseDC(mainHwnd, hdc);
     }
@@ -226,6 +186,80 @@ DWORD WINAPI ArtThread(LPVOID pvoid) {
     GdiFlush();
   }
   return 0x00000000;
+}
+
+// --- Thread pool management -----------------------------------------------
+// These run on the main (UI) thread, never from inside ArtThread itself, so
+// mutating s_slots / s_activeCount doesn't need its own critical section.
+
+bool EnsureThreadCount(int targetCount) {
+  if (targetCount < 1)              targetCount = 1;
+  if (targetCount > kMaxArtThreads) targetCount = kMaxArtThreads;
+
+  // Grow: spawn new slots up to targetCount.
+  while (s_activeCount < targetCount) {
+    const int i = s_activeCount;
+    s_slots[i].exitRequested = false;
+    s_slots[i].hTickEvent    = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    if (s_slots[i].hTickEvent == nullptr) return false;
+    s_slots[i].hThread = CreateThread(nullptr, 0, ArtThread, &s_slots[i], 0, nullptr);
+    if (s_slots[i].hThread == nullptr) {
+      CloseHandle(s_slots[i].hTickEvent);
+      s_slots[i].hTickEvent = nullptr;
+      return false;
+    }
+    s_activeCount++;
+  }
+
+  // Shrink: ask the highest-indexed threads to exit, one by one. The thread
+  // can only observe exitRequested after a wake, so we SetEvent to force it
+  // to run the check. Then join and clean up.
+  while (s_activeCount > targetCount) {
+    const int i = s_activeCount - 1;
+    s_slots[i].exitRequested = true;
+    SetEvent(s_slots[i].hTickEvent);
+    WaitForSingleObject(s_slots[i].hThread, INFINITE);
+    CloseHandle(s_slots[i].hThread);
+    CloseHandle(s_slots[i].hTickEvent);
+    s_slots[i].hThread    = nullptr;
+    s_slots[i].hTickEvent = nullptr;
+    s_activeCount--;
+  }
+  return true;
+}
+
+void SignalArtTick() {
+  // Release one tick to each currently-active thread. Auto-reset events mean
+  // each SetEvent wakes exactly one waiter (the thread waiting on that specific
+  // event), so all s_activeCount threads wake together per tick.
+  for (int i = 0; i < s_activeCount; i++) {
+    if (s_slots[i].hTickEvent != nullptr) {
+      SetEvent(s_slots[i].hTickEvent);
+    }
+  }
+}
+
+void ShutdownArt() {
+  g_running = false;
+  // Wake every live thread so they can observe g_running=false and exit.
+  for (int i = 0; i < s_activeCount; i++) {
+    if (s_slots[i].hTickEvent != nullptr) {
+      SetEvent(s_slots[i].hTickEvent);
+    }
+  }
+  // Then join + close handles.
+  for (int i = 0; i < s_activeCount; i++) {
+    if (s_slots[i].hThread != nullptr) {
+      WaitForSingleObject(s_slots[i].hThread, INFINITE);
+      CloseHandle(s_slots[i].hThread);
+      s_slots[i].hThread = nullptr;
+    }
+    if (s_slots[i].hTickEvent != nullptr) {
+      CloseHandle(s_slots[i].hTickEvent);
+      s_slots[i].hTickEvent = nullptr;
+    }
+  }
+  s_activeCount = 0;
 }
 
 // Creates or replaces the off-screen back buffer to match the current client
@@ -316,12 +350,15 @@ void RecolorBackground(COLORREF oldColor, COLORREF newColor) {
 }
 
 void SetNumShapes(const unsigned int num) {
-  if (num > 8) {
-    g_num_shapes = 8; // Cap at eight concurrent shapes.
-  } else if (num == 0) {
-    g_num_shapes = 1; // Handle invalid 0
-  } else {
-    g_num_shapes = num;
+  unsigned int clamped = num;
+  if (clamped > kMaxArtThreads) clamped = kMaxArtThreads;
+  if (clamped == 0)             clamped = 1;
+  g_num_shapes = clamped;
+  // If the pool is already running (i.e. we're past ShowArt), resize it to
+  // match. Before ShowArt there is nothing to resize — ShowArt will spawn
+  // the right number of threads using g_num_shapes directly.
+  if (g_running) {
+    EnsureThreadCount(static_cast<int>(clamped));
   }
 }
 
@@ -331,29 +368,19 @@ bool ShowArt() {
     return false;
   }
 
-  // Auto-reset event: WaitForSingleObject in the art thread resets it
-  // automatically, so the thread blocks again after each wakeup without
-  // needing an explicit ResetEvent call.
-  g_hDrawEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
-  if (g_hDrawEvent == nullptr) return false;
-
+  // Spin up the initial thread pool matching the current Concurrent Shapes
+  // setting. Each thread owns its own auto-reset wake event and blocks on
+  // it until SignalArtTick (driven by WM_TIMER) says "go."
   g_running = true;
-  HANDLE art_thread = CreateThread(nullptr, 0, ArtThread, nullptr, 0, nullptr);
-  if (art_thread == nullptr) {
-    g_running = false;
-    CloseHandle(g_hDrawEvent);
-    g_hDrawEvent = nullptr;
+  if (!EnsureThreadCount(static_cast<int>(g_num_shapes))) {
+    ShutdownArt();
     return false;
   }
-  CloseHandle(art_thread);
 
-  // Start the timer that drives drawing. WM_TIMER fires every g_delay ms and
-  // signals g_hDrawEvent to wake the art thread.
+  // Start the timer that drives drawing. WM_TIMER fires every g_delay ms
+  // and, via SignalArtTick, pulses every active thread's tick event once.
   if (!SetTimer(mainHwnd, TIMER_ART, g_delay, nullptr)) {
-    g_running = false;
-    SetEvent(g_hDrawEvent); // unblock thread so it can exit
-    CloseHandle(g_hDrawEvent);
-    g_hDrawEvent = nullptr;
+    ShutdownArt();
     return false;
   }
   return true;
@@ -364,17 +391,14 @@ void TogglePaintArt(HWND hWnd) {
     return;
   }
   g_paused = !g_paused;
-  // Rather than tearing down the art thread, just stop (or restart) the timer
-  // that drives it. While paused, no WM_TIMER messages fire, so g_hDrawEvent
-  // is never signalled and the thread sits parked on WaitForSingleObject with
-  // no CPU cost. The back buffer keeps its current contents untouched, which
-  // is exactly what we want for Save As to capture.
+  // Pause = kill the timer so no more ticks fire. Every active thread sits
+  // parked on its tick event, zero CPU. Resume = re-arm the timer and also
+  // give one immediate pulse so the window doesn't wait up to g_delay ms
+  // before redrawing.
   if (g_paused) {
     KillTimer(hWnd, TIMER_ART);
   } else {
-    if (g_hDrawEvent != nullptr) {
-      SetEvent(g_hDrawEvent); // Draw once immediately when resuming
-    }
+    SignalArtTick();
     SetTimer(hWnd, TIMER_ART, g_delay, nullptr);
   }
 }

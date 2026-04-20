@@ -31,11 +31,6 @@ HBITMAP g_hbmMem = nullptr;
 // (g_hdcMem / g_hbmMem) at the same time.
 CRITICAL_SECTION g_paintCS;
 
-// Auto-reset event signalled by WM_TIMER each tick to wake the art thread.
-// Auto-reset means it returns to non-signalled automatically after
-// WaitForSingleObject unblocks, so the thread waits again next iteration.
-HANDLE g_hDrawEvent = nullptr;
-
 // Current background color. Defaults to white, changed via the Background
 // Color menu. Used when filling the back buffer on resize and on WM_PAINT.
 COLORREF g_bkg_color = RGB_WHITE;
@@ -164,11 +159,11 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       break;
     case WM_TIMER:
       // WM_TIMER fires on the main thread at the interval set by SetTimer.
-      // We signal the art thread's event rather than drawing here directly,
-      // keeping all GDI work on the art thread and leaving the main thread
-      // free to process input and paint messages without stalling.
-      if (wParam == TIMER_ART && g_hDrawEvent != nullptr) {
-        SetEvent(g_hDrawEvent);
+      // We signal every active art thread's tick event rather than drawing
+      // here directly, keeping all GDI work on the art threads and leaving
+      // the main thread free to process input and paint messages.
+      if (wParam == TIMER_ART) {
+        SignalArtTick();
       }
       break;
     case WM_ERASEBKGND:
@@ -307,7 +302,9 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           ShutDownApp();
           break;
         case IDM_ABOUT:
-          PlaySoundW(L"SystemNotification", nullptr, SND_ASYNC);
+          if (!g_playsound) {
+            PlaySoundW(L"SystemNotification", nullptr, SND_ASYNC);
+          }
           DialogBoxW(g_hInstance, MAKEINTRESOURCEW(IDD_ABOUTDLG), hWnd, AboutDlgProc);
           break;
         case IDM_HELP:
@@ -413,12 +410,10 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
             HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
             CheckMenuItem(hSettings, IDM_PAUSED, MF_BYCOMMAND | MF_CHECKED);
           }
-          // Signal the draw event. Since the timer is off and the event is
-          // auto-reset, the art thread wakes up, runs exactly one iteration,
-          // then blocks again on WaitForSingleObject.
-          if (g_hDrawEvent != nullptr) {
-            SetEvent(g_hDrawEvent);
-          }
+          // Pulse every active art thread's tick event once. The timer is
+          // off (paused), so this is the only source of ticks — each thread
+          // wakes, draws exactly one shape, and re-blocks.
+          SignalArtTick();
           break;
         }
         case IDM_REPAINT: {
@@ -526,11 +521,9 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           // Replace the timer with the new interval. SetTimer on an existing ID
           // replaces it in place — the next tick will be at the new rate.
           SetTimer(hWnd, TIMER_ART, g_delay, nullptr);
-          // Immediately signal the draw event so the art thread stops waiting on
-          // the old interval and re-blocks on the next WaitForSingleObject call,
-          // which will then wake at the new rate. Without this the thread would
-          // sit out the remainder of the previous tick before noticing the change.
-          if (g_hDrawEvent != nullptr) SetEvent(g_hDrawEvent);
+          // Pulse every active thread once so they stop waiting on the old
+          // interval — the next WM_TIMER tick will then fire at the new rate.
+          SignalArtTick();
           break;
         }
         case IDM_RECTANGLES:
@@ -703,13 +696,9 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
     case WM_DESTROY:
       // Stop the timer first so no more WM_TIMER messages are queued.
       KillTimer(hWnd, TIMER_ART);
-      // Signal the art thread to exit, then close the event handle.
-      g_running = false;
-      if (g_hDrawEvent != nullptr) {
-        SetEvent(g_hDrawEvent);
-        CloseHandle(g_hDrawEvent);
-        g_hDrawEvent = nullptr;
-      }
+      // Tear down every art thread, signal their tick events, and close
+      // their handles in one shot.
+      ShutdownArt();
       // Clean up the back buffer. Order matters: DeleteDC first deselects
       // g_hbmMem from the memory DC, after which DeleteObject can safely free
       // the bitmap. Deleting a bitmap that is still selected into a DC is
@@ -737,10 +726,8 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 
 void ShutDownApp() {
   StopPlayWav();
-  g_running = false;
-  // Unblock the art thread so it can observe g_running=false and exit cleanly
-  // rather than waiting indefinitely on g_hDrawEvent.
-  if (g_hDrawEvent != nullptr) SetEvent(g_hDrawEvent);
+  // WM_DESTROY will call ShutdownArt() for us — DestroyWindow triggers that
+  // path synchronously, so we don't need to touch thread state here.
   DestroyWindow(mainHwnd);
 }
 

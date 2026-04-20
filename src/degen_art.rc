@@ -202,7 +202,7 @@ BEGIN
         BEGIN
             VALUE "Comments", "https://github.com/Alex313031/degen_art"
             VALUE "CompanyName", "Alex313031"
-            VALUE "FileDescription", "Threaded GDI Art Application"
+            VALUE "FileDescription", "Threaded GDI Art Generator Application"
             VALUE "FileVersion", VERSION_STRING
             VALUE "InternalName", "degen_art"
             VALUE "LegalCopyright", LEGAL_COPYRIGHT

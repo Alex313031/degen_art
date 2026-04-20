@@ -332,7 +332,7 @@ bool ShowArt() {
   // Auto-reset event: WaitForSingleObject in the art thread resets it
   // automatically, so the thread blocks again after each wakeup without
   // needing an explicit ResetEvent call.
-  g_hDrawEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+  g_hDrawEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
   if (g_hDrawEvent == nullptr) return false;
 
   g_running = true;

@@ -71,12 +71,12 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
   wndclass.cbClsExtra    = 0;
   wndclass.cbWndExtra    = 0;
   wndclass.hInstance     = hInstance;
-  wndclass.hIcon         = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_MAIN));
-  wndclass.hCursor       = LoadCursor(nullptr, IDC_ARROW) ;
+  wndclass.hIcon         = LoadIconW(hInstance, MAKEINTRESOURCEW(IDI_MAIN));
+  wndclass.hCursor       = LoadCursorW(nullptr, IDC_ARROW) ;
   wndclass.hbrBackground = reinterpret_cast<HBRUSH>(GetStockObject(WHITE_BRUSH));
   wndclass.lpszMenuName  = MAKEINTRESOURCEW(IDC_MAIN);
   wndclass.lpszClassName = szClassName;
-  wndclass.hIconSm       = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_SMALL));
+  wndclass.hIconSm       = LoadIconW(hInstance, MAKEINTRESOURCEW(IDI_SMALL));
 
   if (!RegisterClassExW(&wndclass)) {
     ErrorBox(nullptr, L"RegisterClassEx Error", L"This program requires Windows NT!");
@@ -129,13 +129,13 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
     return 1;
   }
 
-  HACCEL hAccel = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_MAIN));
+  HACCEL hAccel = LoadAcceleratorsW(hInstance, MAKEINTRESOURCEW(IDC_MAIN));
 
   MSG msg;
-  while (GetMessage(&msg, nullptr, 0, 0)) {
-    if (!TranslateAccelerator(mainHwnd, hAccel, &msg)) {
+  while (GetMessageW(&msg, nullptr, 0, 0)) {
+    if (!TranslateAcceleratorW(mainHwnd, hAccel, &msg)) {
       TranslateMessage(&msg);
-      DispatchMessage(&msg);
+      DispatchMessageW(&msg);
     }
   }
   DeleteCriticalSection(&g_paintCS);
@@ -308,7 +308,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           break;
         case IDM_ABOUT:
           PlaySoundW(L"SystemNotification", nullptr, SND_ASYNC);
-          DialogBox(g_hInstance, MAKEINTRESOURCE(IDD_ABOUTDLG), hWnd, AboutDlgProc);
+          DialogBoxW(g_hInstance, MAKEINTRESOURCEW(IDD_ABOUTDLG), hWnd, AboutDlgProc);
           break;
         case IDM_HELP:
           LaunchHelp(hWnd);
@@ -568,7 +568,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           TestTrap(DIV0);
           break;
         default:
-          return DefWindowProc(hWnd, message, wParam, lParam);
+          return DefWindowProcW(hWnd, message, wParam, lParam);
       }
     } break;
     case WM_LBUTTONDOWN:
@@ -596,7 +596,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       } else {
         // Default behavior: left-click drag moves the window.
         ReleaseCapture();
-        SendMessage(hWnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+        SendMessageW(hWnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
       }
       break;
     case WM_LBUTTONUP:
@@ -729,7 +729,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       mainHwnd = nullptr;
       break;
     default:
-      return DefWindowProc(hWnd, message, wParam, lParam);
+      return DefWindowProcW(hWnd, message, wParam, lParam);
   }
   return 0;
 }
@@ -777,7 +777,7 @@ bool LaunchHelp(HWND hWnd) {
 
 INT_PTR CALLBACK AboutDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
   UNREFERENCED_PARAMETER(lParam);
-  static const HICON kAboutIcon = LoadIcon(g_hInstance, MAKEINTRESOURCE(IDI_ABOUT));
+  static const HICON kAboutIcon = LoadIconW(g_hInstance, MAKEINTRESOURCEW(IDI_ABOUT));
   switch (message) {
     case WM_INITDIALOG:
       // Set icon in titlebar of about dialog

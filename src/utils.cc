@@ -142,7 +142,7 @@ bool SaveClientBitmap(HWND hWnd) {
 
   // Query the actual bitmap dimensions from the GDI object
   BITMAP bm = {};
-  GetObject(g_hbmMem, sizeof(BITMAP), &bm);
+  GetObjectW(g_hbmMem, sizeof(BITMAP), &bm);
   const int width  = bm.bmWidth;
   const int height = bm.bmHeight;
 
@@ -402,7 +402,7 @@ static LRESULT CALLBACK ToolbarSubclassProc(HWND hWnd, UINT msg,
   }
   if (msg == WM_PAINT) {
     // Let the toolbar's own paint do its buttons + themed background.
-    LRESULT result = CallWindowProc(s_origToolbarProc, hWnd, msg, wParam, lParam);
+    LRESULT result = CallWindowProcW(s_origToolbarProc, hWnd, msg, wParam, lParam);
     // Now stamp a raised edge around the client rect on top of whatever it
     // drew. GetDC gives a fresh client DC outside the BeginPaint/EndPaint
     // cycle that the original proc used — that's fine, we just need to
@@ -420,14 +420,14 @@ static LRESULT CALLBACK ToolbarSubclassProc(HWND hWnd, UINT msg,
       // and stamp an etched vertical line into each separator's rect so
       // groups stay visually distinct.
       const int count = static_cast<int>(
-          SendMessage(hWnd, TB_BUTTONCOUNT, 0, 0));
+          SendMessageW(hWnd, TB_BUTTONCOUNT, 0, 0));
       for (int i = 0; i < count; i++) {
         TBBUTTON btn = {};
-        if (!SendMessage(hWnd, TB_GETBUTTON, i,
+        if (!SendMessageW(hWnd, TB_GETBUTTON, i,
                          reinterpret_cast<LPARAM>(&btn))) continue;
         if (!(btn.fsStyle & TBSTYLE_SEP)) continue;
         RECT ir;
-        if (!SendMessage(hWnd, TB_GETITEMRECT, i,
+        if (!SendMessageW(hWnd, TB_GETITEMRECT, i,
                          reinterpret_cast<LPARAM>(&ir))) continue;
         // A 2-pixel-wide rect centered in the separator, inset vertically
         // by a couple pixels so the line doesn't touch the toolbar edges.
@@ -441,7 +441,7 @@ static LRESULT CALLBACK ToolbarSubclassProc(HWND hWnd, UINT msg,
     }
     return result;
   }
-  return CallWindowProc(s_origToolbarProc, hWnd, msg, wParam, lParam);
+  return CallWindowProcW(s_origToolbarProc, hWnd, msg, wParam, lParam);
 }
 
 // Creates the application's top toolbar as a child of hParent.
@@ -481,7 +481,7 @@ void CreateAppToolbar(HWND hParent, HINSTANCE hInst) {
 
   // Tell the control which TBBUTTON layout we compiled against so it can
   // adapt if this binary runs against a different Common Controls DLL version.
-  SendMessage(hTB, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+  SendMessageW(hTB, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
 
   // --- Bitmap loading ------------------------------------------------------
   // Each TB_ADDBITMAP adds images to the toolbar's internal image list and
@@ -496,31 +496,31 @@ void CreateAppToolbar(HWND hParent, HINSTANCE hInst) {
   tbab.hInst = hInst;
   tbab.nID = IDB_SAVE_BMP;
   const int idxSave = static_cast<int>(
-      SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
+      SendMessageW(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
   tbab.nID = IDB_PAUSE_BMP;
   s_idxPause = static_cast<int>(
-      SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
+      SendMessageW(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
   tbab.nID = IDB_PLAY_BMP;
   s_idxPlay = static_cast<int>(
-      SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
+      SendMessageW(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
   tbab.nID = IDB_PEN_BMP;
   s_idxPen = static_cast<int>(
-      SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
+      SendMessageW(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
   tbab.nID = IDB_NODRAW_BMP;
   s_idxNoDraw = static_cast<int>(
-      SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
+      SendMessageW(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
   tbab.nID = IDB_SHAPES_BMP;
   s_idxShapes = static_cast<int>(
-      SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
+      SendMessageW(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
   tbab.nID = IDB_SOUND_BMP;
   s_idxSound = static_cast<int>(
-      SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
+      SendMessageW(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
   tbab.nID = IDB_MUTE_BMP;
   s_idxMute = static_cast<int>(
-      SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
+      SendMessageW(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
   tbab.nID = IDB_EXIT_BMP;
   const int idxExit = static_cast<int>(
-      SendMessage(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
+      SendMessageW(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
 
   // --- Buttons -------------------------------------------------------------
   // TBBUTTON fields:
@@ -578,7 +578,7 @@ void CreateAppToolbar(HWND hParent, HINSTANCE hInst) {
   tbButtons[10].fsStyle   = TBSTYLE_BUTTON;
   tbButtons[10].iString   = reinterpret_cast<INT_PTR>(L"Exit");
 
-  SendMessage(hTB, TB_ADDBUTTONS,
+  SendMessageW(hTB, TB_ADDBUTTONS,
               sizeof(tbButtons) / sizeof(tbButtons[0]),
               reinterpret_cast<LPARAM>(tbButtons));
 
@@ -588,19 +588,19 @@ void CreateAppToolbar(HWND hParent, HINSTANCE hInst) {
   // a separate clickable region: clicking the button body still sends
   // WM_COMMAND (idCommand = IDM_DRAW), while clicking the arrow sends
   // TBN_DROPDOWN via WM_NOTIFY so the parent can pop up a custom menu.
-  SendMessage(hTB, TB_SETEXTENDEDSTYLE, 0, TBSTYLE_EX_DRAWDDARROWS);
+  SendMessageW(hTB, TB_SETEXTENDEDSTYLE, 0, TBSTYLE_EX_DRAWDDARROWS);
 
   // Install the subclass for Wine compatibility (see ToolbarSubclassProc).
   // Real Windows ignores it because its WM_PAINT paints over what our
   // WM_ERASEBKGND filled, but Wine needs it to avoid a transparent bar.
   s_origToolbarProc = reinterpret_cast<WNDPROC>(
-      SetWindowLongPtr(hTB, GWLP_WNDPROC,
+      SetWindowLongPtrW(hTB, GWLP_WNDPROC,
                        reinterpret_cast<LONG_PTR>(ToolbarSubclassProc)));
 
   // TB_AUTOSIZE tells the toolbar to re-measure itself based on its buttons
   // and the parent's width. Required after adding/removing buttons and also
   // on every parent resize (LayoutToolbar calls it again from WM_SIZE).
-  SendMessage(hTB, TB_AUTOSIZE, 0, 0);
+  SendMessageW(hTB, TB_AUTOSIZE, 0, 0);
 
   // Buttons and layout are in place; show the toolbar now.
   ShowWindow(hTB, SW_SHOW);
@@ -621,7 +621,7 @@ void LayoutToolbar(HWND hWnd) {
   // Let the toolbar re-measure itself for the new parent width. We then re-read
   // its height in case the row count changed (e.g. buttons wrapped onto a new
   // row because the parent got narrower).
-  SendMessage(s_hToolbar, TB_AUTOSIZE, 0, 0);
+  SendMessageW(s_hToolbar, TB_AUTOSIZE, 0, 0);
   RECT tbRect;
   GetWindowRect(s_hToolbar, &tbRect);
   g_toolbarHeight = tbRect.bottom - tbRect.top;
@@ -638,7 +638,7 @@ void SetPauseButton(bool paused) {
   bi.dwMask  = TBIF_IMAGE | TBIF_TEXT;
   bi.iImage  = paused ? s_idxPlay : s_idxPause;
   bi.pszText = const_cast<LPWSTR>(paused ? L"Resume" : L"Pause");
-  SendMessage(s_hToolbar, TB_SETBUTTONINFOW, IDM_PAUSED,
+  SendMessageW(s_hToolbar, TB_SETBUTTONINFOW, IDM_PAUSED,
               reinterpret_cast<LPARAM>(&bi));
 }
 
@@ -649,7 +649,7 @@ void SetSoundButton(bool playing) {
   bi.dwMask  = TBIF_IMAGE | TBIF_TEXT;
   bi.iImage  = playing ? s_idxMute : s_idxSound;
   bi.pszText = const_cast<LPWSTR>(playing ? L"Mute" : L"Music");
-  SendMessage(s_hToolbar, TB_SETBUTTONINFOW, IDM_SOUND,
+  SendMessageW(s_hToolbar, TB_SETBUTTONINFOW, IDM_SOUND,
               reinterpret_cast<LPARAM>(&bi));
 }
 
@@ -660,7 +660,7 @@ void SetDrawButton(bool drawing) {
   bi.dwMask  = TBIF_IMAGE | TBIF_TEXT;
   bi.iImage  = drawing ? s_idxNoDraw : s_idxPen;
   bi.pszText = const_cast<LPWSTR>(drawing ? L"Stop Draw" : L"Draw");
-  SendMessage(s_hToolbar, TB_SETBUTTONINFOW, IDM_DRAW,
+  SendMessageW(s_hToolbar, TB_SETBUTTONINFOW, IDM_DRAW,
               reinterpret_cast<LPARAM>(&bi));
 }
 
@@ -668,7 +668,7 @@ void PopupUnderToolbarButton(HWND hOwner, int idCommand, HMENU hMenu) {
   if (s_hToolbar == nullptr || hMenu == nullptr) return;
   // TB_GETRECT returns the button's rect in toolbar-client coords.
   RECT rc;
-  if (!SendMessage(s_hToolbar, TB_GETRECT, idCommand,
+  if (!SendMessageW(s_hToolbar, TB_GETRECT, idCommand,
                    reinterpret_cast<LPARAM>(&rc))) {
     return;
   }

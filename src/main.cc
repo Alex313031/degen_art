@@ -44,6 +44,9 @@ COLORREF g_draw_color = RGB_BLACK;
 static bool s_drawing        = false;
 static POINT s_lastDraw      = {};
 
+// Whether to open conhost window for debugging.
+static constexpr bool debug_console = true;
+
 int APIENTRY wWinMain(HINSTANCE hInstance,
                       HINSTANCE hPrevInstance,
                       LPWSTR lpCmdLine,
@@ -77,7 +80,6 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
     ErrorBox(nullptr, L"RegisterClassEx Error", L"This program requires Windows NT!");
     return 2;
   } else {
-    static constexpr bool debug_console = false;
     // Set up our logging using mini_logger library.
     const logging::LogDest kLogSink = debug_console ? logging::LOG_TO_ALL : logging::LOG_NONE;
     const std::wstring kLogFile(L"degen_art.log");
@@ -102,7 +104,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
   InitializeCriticalSection(&g_paintCS);
   
   static constexpr DWORD exStyle =
-#if _WIN32_WINNT >= 0x0501
+#if _WIN32_WINNT > 0x0602 // Only Windows 8.1+ handles composited correctly with the way this app works.
       WS_EX_OVERLAPPEDWINDOW | WS_EX_COMPOSITED;
 #else
       WS_EX_OVERLAPPEDWINDOW;
@@ -164,6 +166,44 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       // the main thread free to process input and paint messages.
       if (wParam == TIMER_ART) {
         SignalArtTick();
+      }
+      break;
+    case WM_APP_AUTOPLAY:
+      // Deferred startup auto-play. InitApp (called from WM_CREATE) posts
+      // this message instead of calling PlayWavFile directly so the actual
+      // play call runs in the normal WindowProc dispatch context rather
+      // than inside WM_CREATE, which is correct cross-version hygiene.
+      // SetSoundButton flips the toolbar button from "Music On" (idle) to
+      // "Mute" (playing) once playback is underway.
+      PlayWavFile(sound_file, kUseEmbeddedBgm);
+      SetSoundButton(g_playsound);
+      break;
+    case MM_MCINOTIFY:
+      // Loop-back handler for the MCI-driven background music. When the
+      // waveform driver finishes a `play ... notify` command successfully,
+      // it posts MM_MCINOTIFY with wParam == MCI_NOTIFY_SUCCESSFUL. We
+      // re-issue the play command here to achieve continuous looping —
+      // MCIWAVE doesn't accept `repeat` on its play verb the way MCIAVI /
+      // MCICDA do, so this is the idiomatic substitute.
+      //
+      // `from 0` is REQUIRED: after a natural completion MCI leaves the
+      // position cursor at end-of-file, and a bare `play` would try to
+      // resume from EOF (a silent no-op). Explicitly rewinding to 0
+      // restarts the clip cleanly and is correct whether or not the
+      // driver auto-rewinds on underflow.
+      //
+      // wParam values we might see: MCI_NOTIFY_SUCCESSFUL (natural end-of-
+      // clip — we loop), MCI_NOTIFY_SUPERSEDED (another play command took
+      // over — do nothing), MCI_NOTIFY_ABORTED (stop/close happened — do
+      // nothing), MCI_NOTIFY_FAILURE (driver error — do nothing). The
+      // g_playsound guard also protects against a late-arriving SUCCESSFUL
+      // notification that races a user Stop.
+      if (wParam == MCI_NOTIFY_SUCCESSFUL && g_playsound) {
+        // Re-issue with hWnd as the callback so the NEXT completion also
+        // lands here. Dropping the callback param (passing nullptr) would
+        // make MCI silently swallow future MM_MCINOTIFY messages and the
+        // loop would play exactly twice then die.
+        mciSendStringW(L"play degen_art_bgm from 0 notify", nullptr, 0, hWnd);
       }
       break;
     case WM_ERASEBKGND:
@@ -256,21 +296,21 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           HMENU hMenu = CreatePopupMenu();
           AppendMenuW(hMenu,
                       g_draw_color == RGB_BLACK ? kChecked : MF_STRING,
-                      IDM_DRAW_BLACK, L"Black");
+                      IDM_DRAW_BLACK, L"Black Pen");
           AppendMenuW(hMenu,
                       g_draw_color == RGB_WHITE ? kChecked : MF_STRING,
-                      IDM_DRAW_WHITE, L"White");
+                      IDM_DRAW_WHITE, L"White Pen");
           AppendMenuW(hMenu,
                       g_draw_color == RGB_RED ? kChecked : MF_STRING,
-                      IDM_DRAW_RED, L"Red");
+                      IDM_DRAW_RED, L"Red Pen");
           AppendMenuW(hMenu,
                       g_draw_color == RGB_GREEN ? kChecked : MF_STRING,
-                      IDM_DRAW_GREEN, L"Green");
+                      IDM_DRAW_GREEN, L"Green Pen");
           AppendMenuW(hMenu,
                       g_draw_color == RGB_BLUE ? kChecked : MF_STRING,
-                      IDM_DRAW_BLUE, L"Blue");
+                      IDM_DRAW_BLUE, L"Blue Pen");
           AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-          AppendMenuW(hMenu, MF_STRING, IDM_PICKCOLOR, L"Pick Color...");
+          AppendMenuW(hMenu, MF_STRING, IDM_PICKCOLOR, L"Pick Pen Color...");
           // TrackPopupMenu dispatches any selection as a WM_COMMAND to hWnd,
           // which lands in the cases below / the existing IDM_PICKCOLOR handler.
           TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_TOPALIGN,
@@ -435,14 +475,18 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         case IDM_CONC_1:
         case IDM_CONC_2:
         case IDM_CONC_3:
-        case IDM_CONC_4: {
+        case IDM_CONC_4:
+        case IDM_CONC_5:
+        case IDM_CONC_6:
+        case IDM_CONC_7:
+        case IDM_CONC_8: {
           // Consecutive IDs let us derive the count directly from the command.
           SetNumShapes((command - IDM_CONC_1) + 1);
           // Concurrent Shapes now lives inside the Shapes submenu.
           HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
           HMENU hShapes   = GetSubMenu(hSettings, 4);
           HMENU hConc     = GetSubMenu(hShapes, 7);
-          CheckMenuRadioItem(hConc, IDM_CONC_1, IDM_CONC_4, command, MF_BYCOMMAND);
+          CheckMenuRadioItem(hConc, IDM_CONC_1, IDM_CONC_8, command, MF_BYCOMMAND);
           break;
         }
         case IDM_MONOCHROME: {
@@ -744,16 +788,19 @@ bool InitApp(HWND hWnd) {
   // Only start background music if IDM_SOUND is CHECKED in the RC at startup.
   // Keeps behavior RC-driven: toggling the CHECKED flag in degen_art.rc is the
   // only change needed to opt in or out of auto-play.
+  //
+  // We POST a custom message rather than calling PlayWavFile directly. Reason:
+  // on Windows 2000, PlaySound's SND_ASYNC worker thread silently discards the
+  // decode when invoked from inside WM_CREATE (i.e. before the owning thread's
+  // message loop has started pumping). PlaySound returns TRUE but no audio
+  // ever comes out. XP and later relaxed this, so the direct call appears to
+  // work there — but posting is correct on every version. WM_APP_AUTOPLAY is
+  // picked up by the normal dispatch path once GetMessage starts running.
   HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
-  bool ok = true;
   if (GetMenuState(hSettings, IDM_SOUND, MF_BYCOMMAND) & MF_CHECKED) {
-    ok = PlayWavFile(sound_file);
+    PostMessageW(hWnd, WM_APP_AUTOPLAY, 0, 0);
   }
-  // Sync the toolbar's sound button icon/label with g_playsound — the button
-  // was created in its "Music On" state; if auto-play kicked in above we
-  // need it flipped to "Mute".
-  SetSoundButton(g_playsound);
-  return ok;
+  return true;
 }
 
 bool LaunchHelp(HWND hWnd) {

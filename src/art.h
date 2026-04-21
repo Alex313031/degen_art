@@ -23,8 +23,7 @@ extern HBITMAP g_hbmMem;
 // Hard upper bound on concurrent art threads. 8 matches the historical
 // Windows 2000 Server / Windows XP CPU-license limit — beyond that on a
 // weak 1-core box the drawing threads would just thrash the scheduler.
-// The IDM_CONC_* menu currently only exposes 1..4, so this leaves room
-// to expose up to 8 in the RC later without touching the thread-pool code.
+// The IDM_CONC_* menu exposes IDM_CONC_1..IDM_CONC_8 matching this bound.
 #define kMaxArtThreads 8
 
 // One art thread. Each thread waits on its own private auto-reset event and

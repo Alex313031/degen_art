@@ -60,3 +60,5 @@ On Windows, it simply uses an extracted toolchain from win32-devkit mentioned ab
 BetaWiki.com https://betawiki.net/
 
 Charles Petzold - [Programming Windows 5th Ed.](https://www.charlespetzold.com/books/)
+
+Audio - [WaterSky.xm (c) Ghidorah 2001](https://modarchive.org/index.php?request=view_by_moduleid&query=60900)

@@ -9,6 +9,15 @@
 
 inline const std::wstring sound_file = L"watersky.wav"; // Sound to play
 
+// Compile-time switch for how the background music is sourced. When true,
+// PlayWavFile ignores its wav_file argument and plays the WAV baked into
+// the .exe as the IDR_BGM_WAVE resource (extracted to a temp file so MCI
+// can open it — MCI's string API has no "play from memory" form, and we
+// need MCI specifically to decode MS ADPCM reliably on Win2K). When false,
+// PlayWavFile reads the file by name from the exe directory as before.
+// Flip here and rebuild; callers pass this through to PlayWavFile.
+inline constexpr bool kUseEmbeddedBgm = true;
+
 extern volatile bool g_playsound;
 
 // Color constants
@@ -57,10 +66,25 @@ bool SaveClientBitmap(HWND hWnd);
 
 const int TestTrap(TrapType type);
 
-// Plays a .wav file (has to be side by side with the main .exe)
-bool PlayWavFile(const std::wstring& wav_file);
+// Plays a .wav file. On the first call, opens the file and starts playback
+// from position 0. On subsequent calls after a PauseWavFile, issues an MCI
+// `resume` so playback continues from where it was paused (no re-open, no
+// restart).
+//
+// If use_embedded is true, wav_file is ignored and the clip is taken from
+// the IDR_BGM_WAVE resource baked into the exe. On first play the resource
+// is materialized to a temp file (MCI needs a path, not a memory buffer)
+// and StopPlayWav deletes that file on cleanup. If use_embedded is false,
+// wav_file must name a .wav sitting next to the exe.
+bool PlayWavFile(const std::wstring& wav_file, bool use_embedded);
 
-// Stops playing any sound files currently playing
+// Pauses the currently-playing sound, preserving playback position. The
+// MCI device stays open; a following PlayWavFile will resume rather than
+// restart. Used by the mute toolbar / menu toggle.
+bool PauseWavFile();
+
+// Fully stops playback and releases the MCI device (stop + close). Used by
+// ShutDownApp for cleanup on exit — not by the mute toggle.
 bool StopPlayWav();
 
 // Starts and stops playing sound at will.

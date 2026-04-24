@@ -14,7 +14,6 @@ extern volatile bool g_paused;  // Keep track of paused state. PauseArt() uses t
 
 extern CRITICAL_SECTION g_paintCS; // For thread sync on back buffer access
 
-
 extern COLORREF g_bkg_color; // Current background color, changed via the Background Color menu
 
 extern bool g_draw_mode; // True when IDM_DRAW is active — left-click paints instead of moving window

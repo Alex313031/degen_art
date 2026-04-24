@@ -6,6 +6,30 @@
 
 volatile bool g_playsound = false;
 
+// The toolbar child window handle. Kept file-static so nothing else can
+// accidentally mutate it — other TUs interact only via the functions below.
+static HWND s_hToolbar = nullptr;
+
+// Saved original toolbar WndProc so our subclass can chain through to it.
+static WNDPROC s_origToolbarProc = nullptr;
+
+// Measured in pixels after TB_AUTOSIZE runs. Exposed through globals.h so
+// art.cc / main.cc can offset the back-buffer blit and mouse coords by it.
+int g_toolbarHeight = 0;
+
+// Bitmap indices captured from TB_ADDBITMAP for the dynamic-icon buttons.
+// TB_ADDBITMAP returns the starting index of images it added to the toolbar's
+// internal image list, which is what TBBUTTON::iBitmap (and TBBUTTONINFO::
+// iImage) references. SetPauseButton / SetSoundButton toggle between these
+// to flip the icon on state changes.
+static int s_idxPause  = 0;
+static int s_idxPlay   = 0;
+static int s_idxSound  = 0;
+static int s_idxMute   = 0;
+static int s_idxPen    = 0;
+static int s_idxNoDraw = 0;
+static int s_idxShapes = 0;
+
 // Reads the CHECKED state of every menu group at startup and sets the
 // corresponding globals. This makes all defaults entirely RC-driven: changing
 // which item has CHECKED in degen_art.rc is the only code change needed to
@@ -549,30 +573,6 @@ bool ErrorBox(HWND hWnd, const std::wstring& title, const std::wstring& message)
 // All toolbar state and logic live here. main.cc only calls CreateAppToolbar
 // (from WM_CREATE) and LayoutToolbar (from WM_SIZE); the handle itself never
 // escapes this file.
-
-// The toolbar child window handle. Kept file-static so nothing else can
-// accidentally mutate it — other TUs interact only via the functions below.
-static HWND s_hToolbar = nullptr;
-
-// Saved original toolbar WndProc so our subclass can chain through to it.
-static WNDPROC s_origToolbarProc = nullptr;
-
-// Measured in pixels after TB_AUTOSIZE runs. Exposed through globals.h so
-// art.cc / main.cc can offset the back-buffer blit and mouse coords by it.
-int g_toolbarHeight = 0;
-
-// Bitmap indices captured from TB_ADDBITMAP for the dynamic-icon buttons.
-// TB_ADDBITMAP returns the starting index of images it added to the toolbar's
-// internal image list, which is what TBBUTTON::iBitmap (and TBBUTTONINFO::
-// iImage) references. SetPauseButton / SetSoundButton toggle between these
-// to flip the icon on state changes.
-static int s_idxPause  = 0;
-static int s_idxPlay   = 0;
-static int s_idxSound  = 0;
-static int s_idxMute   = 0;
-static int s_idxPen    = 0;
-static int s_idxNoDraw = 0;
-static int s_idxShapes = 0;
 
 // Disables Visual Styles (theming) on a single window by dynamically loading
 // uxtheme.dll and calling SetWindowTheme with empty theme/class strings.

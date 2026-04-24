@@ -433,9 +433,19 @@ void TogglePaintArt(HWND hWnd) {
   // parked on its tick event, zero CPU. Resume = re-arm the timer and also
   // give one immediate pulse so the window doesn't wait up to g_delay ms
   // before redrawing.
+  //
+  // Music tracks the paint-pause: when the canvas freezes we silence the
+  // background track, when it thaws we pick up playback where we left off.
+  // Every pause/resume (menu, toolbar, draw-mode auto-pause, single-step's
+  // first press) funnels through here, so a single pair of calls covers
+  // every entry point. Single-step's subsequent pulses go through
+  // SignalArtTick directly, not TogglePaintArt, so audio correctly stays
+  // silent across each step until the user actually resumes painting.
   if (g_paused) {
     KillTimer(hWnd, TIMER_ART);
+    PauseMusicForPaint();
   } else {
+    ResumeMusicForPaint();
     SignalArtTick();
     SetTimer(hWnd, TIMER_ART, g_delay, nullptr);
   }

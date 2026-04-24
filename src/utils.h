@@ -83,6 +83,17 @@ bool PlayWavFile(const std::wstring& wav_file, bool use_embedded);
 // restart. Used by the mute toolbar / menu toggle.
 bool PauseWavFile();
 
+// Paint-pause-driven music pause. Unlike PauseWavFile (the user-facing mute
+// toggle), these helpers do NOT flip g_playsound — that global tracks the
+// user's *intent* (IDM_SOUND menu / toolbar state) and must stay stable
+// while painting is paused so the UI doesn't flicker out of "Music On".
+// We just send MCI pause/resume directly and remember internally whether
+// the current silence was caused by a paint-pause, so resuming painting
+// only unpauses audio we ourselves silenced (not audio the user muted).
+// A no-op when music isn't playing or the user has already muted.
+void PauseMusicForPaint();
+void ResumeMusicForPaint();
+
 // Fully stops playback and releases the MCI device (stop + close). Used by
 // ShutDownApp for cleanup on exit — not by the mute toggle.
 bool StopPlayWav();

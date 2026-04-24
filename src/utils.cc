@@ -315,6 +315,14 @@ static const wchar_t kMciBgmAlias[] = L"degen_art_bgm";
 // Avoids issuing commands against a non-existent alias (which MCI would
 // answer with a confusing "device not open" error).
 static bool s_mciOpened = false;
+// Set when PauseMusicForPaint actually issued an MCI `pause` because the
+// user paused painting. ResumeMusicForPaint keys off this so we only
+// un-pause audio we ourselves silenced — if the user mutes via IDM_SOUND
+// *while* painting is paused, their explicit mute wins and the paint
+// resume will leave audio quiet (g_playsound will be false, so the
+// guard below skips `resume`). The flag is latched, not a level, so it
+// survives the whole paint-pause window regardless of intervening mutes.
+static bool s_musicPausedByPaint = false;
 // Path of the temp .wav we materialized from IDR_BGM_WAVE (empty when the
 // current session is playing from a side-by-side file instead). Populated
 // on the first embedded-source PlayWavFile call; StopPlayWav removes the
@@ -479,6 +487,46 @@ bool PauseWavFile() {
   }
   g_playsound = false;
   return true;
+}
+
+void PauseMusicForPaint() {
+  // Only pause if music is currently audible. s_mciOpened gates access to
+  // the alias (MCI would reject commands against a closed device), and
+  // g_playsound reflects that the user actually has music enabled — if
+  // they're already muted, there's nothing to silence.
+  if (!s_mciOpened || !g_playsound) {
+    return;
+  }
+  MCIERROR err = mciSendStringW(L"pause degen_art_bgm", nullptr, 0, nullptr);
+  if (err != 0) {
+    LOG(ERROR) << L"MCI pause (paint) failed: " << MciErrText(err);
+    return;
+  }
+  // Deliberately do NOT touch g_playsound here — it encodes user intent
+  // and the IDM_SOUND menu check / toolbar icon stay bound to it, so we
+  // want them to keep showing "Music On" through the paint-pause window.
+  s_musicPausedByPaint = true;
+}
+
+void ResumeMusicForPaint() {
+  // Always clear the latched flag so any later unmute starts from a
+  // clean slate, even in the cases where we decide below not to resume.
+  const bool weSilenced = s_musicPausedByPaint;
+  s_musicPausedByPaint = false;
+  if (!weSilenced || !s_mciOpened) {
+    return;
+  }
+  // If the user muted (via IDM_SOUND) while painting was paused, respect
+  // that — leave the MCI device in its already-paused state. They can
+  // re-enable music via IDM_SOUND, which will MCI `resume` from this
+  // exact position.
+  if (!g_playsound) {
+    return;
+  }
+  MCIERROR err = mciSendStringW(L"resume degen_art_bgm", nullptr, 0, nullptr);
+  if (err != 0) {
+    LOG(ERROR) << L"MCI resume (paint) failed: " << MciErrText(err);
+  }
 }
 
 bool StopPlayWav() {

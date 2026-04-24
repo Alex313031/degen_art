@@ -6,7 +6,7 @@
 
 ## About
 
-A small Windows NT 4.0+ compatible program that plays music while generating abstract art.  
+A small Windows NT 4.0+ compatible program that generates abstract art and plays music, with tweakable settings.  
 
 <img src="./assets/Windows_NT_4.0_Workstation_logo.svg" height="64">
 

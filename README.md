@@ -48,7 +48,7 @@ It can be used on Windows 7+ or Linux. (Unlike the regular MinGW method above, g
 Really, it is a meta-build system. GN stands for "Generate Ninja" and can use __BUILD.gn__ files to
 generate `.ninja` files. These are used by Ninja (the actual build system), to run the commands to compile it.  
 The compiler itself is dependant on the host platform:  
-On Linux special MinGW build I compiled on Ubuntu 24.04 to support legacy Windows and use static linkage is used.
+On Linux, a special MinGW build I compiled on Ubuntu 24.04 to support legacy Windows and use static linkage is used.
 On Windows, it simply uses an extracted toolchain from win32-devkit mentioned above.
 
 ### With Visual Studio 2005

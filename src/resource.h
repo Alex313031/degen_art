@@ -101,22 +101,22 @@
 #define IDM_DRAW_GREEN              238
 #define IDM_DRAW_BLUE               239
 
-// Toolbar button menu itentifier for "Shapes" button with submenu.
+// Toolbar button menu identifier for "Shapes" button with submenu.
 #define IDM_SHAPES                  240
 
 // Dev menu items
 #define IDM_TESTTRAP                250
-
-// Embedded background-music WAV. Loaded as a user-defined "WAVE" resource
-// when kUseEmbeddedBgm is true (see utils.h). The RC file binds this ID
-// to res/watersky.wav; FindResourceW(L"WAVE") picks it up at runtime.
-#define IDR_BGM_WAVE                500
 
 // Buttons
 #define IDC_BUTTON                  300
 
 // Timer IDs
 #define TIMER_ART                   400
+
+// Embedded background-music WAV. Loaded as a user-defined "WAVE" resource
+// when kUseEmbeddedBgm is true (see utils.h). The RC file binds this ID
+// to res/watersky.wav; FindResourceW(L"WAVE") picks it up at runtime.
+#define IDR_BGM_WAVE                500
 
 // Custom posted-message IDs (WM_APP range, guaranteed to not clash with any
 // system / common-control message). Used to defer work that mustn't run

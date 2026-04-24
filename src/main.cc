@@ -45,7 +45,7 @@ static bool s_drawing        = false;
 static POINT s_lastDraw      = {};
 
 // Whether to open conhost window for debugging.
-static constexpr bool debug_console = true;
+static constexpr bool debug_console = is_debug;
 
 int APIENTRY wWinMain(HINSTANCE hInstance,
                       HINSTANCE hPrevInstance,
@@ -114,8 +114,24 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
   // OS handles its theming (themed on XP+, classic on Win2000).
   static constexpr DWORD style =
       WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SIZEBOX | WS_CLIPCHILDREN;
+
+  // Center the window on the primary monitor's work area. SPI_GETWORKAREA
+  // returns the portion of the screen not obscured by the taskbar / appbars,
+  // so the centered rect won't sit underneath the taskbar. We can't query the
+  // monitor the window will land on (the HWND doesn't exist yet), so the
+  // primary monitor is the right reference point for the initial placement;
+  // the user can drag to a secondary monitor afterward. If the SPI call fails
+  // for any reason, we fall back to CW_USEDEFAULT so the window still appears.
+  INT xPos = CW_USEDEFAULT;
+  INT yPos = CW_USEDEFAULT;
+  RECT workArea;
+  if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &workArea, 0)) {
+    xPos = workArea.left + ((workArea.right  - workArea.left) - CW_WIDTH)  / 2;
+    yPos = workArea.top  + ((workArea.bottom - workArea.top)  - CW_HEIGHT) / 2;
+  }
+
   mainHwnd = CreateWindowExW(exStyle, szClassName, appTitle, style,
-                         CW_USEDEFAULT, CW_USEDEFAULT,
+                         xPos, yPos,
                          CW_WIDTH, CW_HEIGHT, nullptr, nullptr, hInstance, nullptr);
 
   if (mainHwnd == nullptr) {

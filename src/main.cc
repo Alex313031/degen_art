@@ -21,6 +21,12 @@ static bool s_resizing = false;
 static POINT s_resizeOrigin = {};
 static SIZE s_resizeStartSize = {};
 
+// Tracks an automatic pause driven by the user minimizing the window. Distinct
+// from g_paused (which reflects the user's explicit IDM_PAUSED state + menu
+// check mark) so that restoring the window only resumes the timer when we were
+// the ones that stopped it — a user-requested pause survives a minimize cycle.
+static bool s_paused_by_minimize = false;
+
 HDC g_hdcMem     = nullptr;
 HBITMAP g_hbmMem = nullptr;
 
@@ -282,20 +288,47 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
       break;
     }
     case WM_SIZE: {
+      // WM_SIZE fires with wParam == SIZE_MINIMIZED and (cx, cy) == (0, 0) when
+      // the window is minimized. In that state there is no drawable surface, so
+      // we want the art thread parked (no CPU burn on timer ticks that draw
+      // nothing) AND we want to preserve the current canvas / cxClient / cyClient
+      // so that restoring brings back the exact bitmap the user was looking at.
+      // Skip the layout + RecreateBackBuffer path entirely — it would zero out
+      // the canvas dims and, on restore, the RecreateBackBuffer size-change
+      // branch would allocate a fresh (empty) bitmap and the painted art would
+      // be gone.
+      if (wParam == SIZE_MINIMIZED) {
+        if (!g_paused && !s_paused_by_minimize) {
+          KillTimer(hWnd, TIMER_ART);
+          s_paused_by_minimize = true;
+        }
+        break;
+      }
       // Let the toolbar re-fit the new parent width and re-measure its height.
       // All toolbar state lives in utils.cc; this one call updates
       // g_toolbarHeight as needed.
       LayoutToolbar(hWnd);
       // cxClient / cyClient represent the ART canvas, not the parent's client
       // area — the toolbar isn't drawable space. Clamp to zero when the
-      // window is smaller than the toolbar (minimized / extreme resize).
+      // window is smaller than the toolbar (extreme resize).
       cxClient = LOWORD(lParam);
       cyClient = HIWORD(lParam) - g_toolbarHeight;
       if (cyClient < 0) cyClient = 0;
       // The art canvas changed size, so recreate the back buffer to match.
       // If it grew, the old bitmap would be too small and BitBlt would read
       // outside its bounds; if it shrank, the old one just wastes memory.
+      // RecreateBackBuffer is a no-op when the existing bitmap already matches
+      // the requested size — which is the case coming out of a plain minimize
+      // (SIZE_RESTORED with the pre-minimize dims), so the canvas is preserved.
       RecreateBackBuffer(hWnd, cxClient, cyClient);
+      // Resume the timer if we paused it for a minimize. Skip the resume if
+      // the user has since paused explicitly (g_paused) — their pause wins.
+      if (s_paused_by_minimize) {
+        s_paused_by_minimize = false;
+        if (!g_paused) {
+          SetTimer(hWnd, TIMER_ART, g_delay, nullptr);
+        }
+      }
       break;
     }
     case WM_NOTIFY: {

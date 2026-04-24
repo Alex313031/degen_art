@@ -274,6 +274,19 @@ void ShutdownArt() {
 // that BitBlt can copy between them without color conversion overhead.
 void RecreateBackBuffer(HWND hWnd, int cx, int cy) {
   if (cx <= 0 || cy <= 0 || g_hdcMem == nullptr) return;
+  // Fast-path: if the existing bitmap is already exactly the requested size,
+  // leave it in place. This makes minimize → restore preserve the painted
+  // canvas (WM_SIZE fires with the pre-minimize dims on restore, so cx/cy
+  // match), and also avoids pointless bitmap churn on any other WM_SIZE that
+  // doesn't actually change dims. GetObject(HBITMAP, ...) fills a BITMAP
+  // struct with bmWidth/bmHeight for a DDB — no DC / lock required.
+  if (g_hbmMem != nullptr) {
+    BITMAP bm = {};
+    if (GetObject(g_hbmMem, sizeof(bm), &bm) != 0 &&
+        bm.bmWidth == cx && bm.bmHeight == cy) {
+      return;
+    }
+  }
   // Borrow the window DC only to query its pixel format for CreateCompatibleBitmap.
   HDC hdcWin = GetDC(hWnd);
   HBITMAP hbmNew = CreateCompatibleBitmap(hdcWin, cx, cy);

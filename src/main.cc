@@ -70,7 +70,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
   wndclass.cbWndExtra    = 0;
   wndclass.hInstance     = hInstance;
   wndclass.hIcon         = LoadIconW(hInstance, MAKEINTRESOURCEW(IDI_MAIN));
-  wndclass.hCursor       = LoadCursorW(nullptr, IDC_ARROW) ;
+  wndclass.hCursor       = LoadCursorW(nullptr, IDC_ARROW);
   wndclass.hbrBackground = reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
   wndclass.lpszMenuName  = MAKEINTRESOURCEW(IDR_MAIN);
   wndclass.lpszClassName = szClassName;
@@ -135,8 +135,17 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
       DispatchMessageW(&msg);
     }
   }
+  // Accelerator tables from LoadAccelerators are freed automatically on
+  // process exit, but destroying explicitly keeps the shutdown path
+  // symmetric with the CS/DC cleanup elsewhere.
+  if (hAccel != nullptr) {
+    DestroyAcceleratorTable(hAccel);
+  }
   DeleteCriticalSection(&g_paintCS);
-  return msg.wParam;
+  // WPARAM is pointer-sized (64-bit on x64); wWinMain's return type is int,
+  // so narrow explicitly. WM_QUIT's wParam is the app exit code and always
+  // fits in an int in practice.
+  return static_cast<int>(msg.wParam);
 }
 
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -168,16 +177,23 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         SignalArtTick();
       }
       break;
-    case WM_APP_AUTOPLAY:
+    case WM_APP_AUTOPLAY: {
       // Deferred startup auto-play. InitApp (called from WM_CREATE) posts
       // this message instead of calling PlayWavFile directly so the actual
       // play call runs in the normal WindowProc dispatch context rather
       // than inside WM_CREATE, which is correct cross-version hygiene.
       // SetSoundButton flips the toolbar button from "Music On" (idle) to
-      // "Mute" (playing) once playback is underway.
-      PlayWavFile(sound_file, kUseEmbeddedBgm);
+      // "Mute" (playing) once playback is underway. If the play call fails
+      // (missing WAV, driver error, etc.), clear the IDM_SOUND menu check
+      // so the menu state matches the fact that nothing is actually playing.
+      const bool playing = PlayWavFile(sound_file, kUseEmbeddedBgm);
+      if (!playing) {
+        HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
+        CheckMenuItem(hSettings, IDM_SOUND, MF_BYCOMMAND | MF_UNCHECKED);
+      }
       SetSoundButton(g_playsound);
       break;
+    }
     case MM_MCINOTIFY:
       // Loop-back handler for the MCI-driven background music. When the
       // waveform driver finishes a `play ... notify` command successfully,
@@ -352,7 +368,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           break;
         case IDM_ABOUT:
           if (!g_playsound) {
-            PlaySoundW(L"SystemNotification", nullptr, SND_ASYNC);
+            PlaySoundW(L"SystemNotification", nullptr, SND_ALIAS | SND_ASYNC);
           }
           DialogBoxW(g_hInstance, MAKEINTRESOURCEW(IDD_ABOUTDLG), hWnd, AboutDlgProc);
           break;
@@ -635,10 +651,15 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
         // Begin a drawing stroke. Capture the mouse so we keep receiving
         // WM_MOUSEMOVE/WM_LBUTTONUP even if the cursor leaves the client area.
         // Mouse coords arrive in window-client space; subtract g_toolbarHeight
-        // to translate them into the art canvas's coordinate system.
+        // to translate them into the art canvas's coordinate system. A
+        // negative y after the shift means the click landed above the art
+        // canvas (toolbar area); bail out so we don't draw/invalidate there.
+        const int canvasX = GET_X_LPARAM(lParam);
+        const int canvasY = GET_Y_LPARAM(lParam) - g_toolbarHeight;
+        if (canvasY < 0) break;
         s_drawing = true;
-        s_lastDraw.x = GET_X_LPARAM(lParam);
-        s_lastDraw.y = GET_Y_LPARAM(lParam) - g_toolbarHeight;
+        s_lastDraw.x = canvasX;
+        s_lastDraw.y = canvasY;
         SetCapture(hWnd);
         // Drop a single dot at the starting point so a click with no drag is
         // still visible.
@@ -761,6 +782,12 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
     case WM_DESTROY:
       // Stop the timer first so no more WM_TIMER messages are queued.
       KillTimer(hWnd, TIMER_ART);
+      // Tear down MCI here too — most shutdowns go through ShutDownApp
+      // (which calls StopPlayWav), but if the window is destroyed by any
+      // other path (external DestroyWindow, session end, etc.) we still
+      // need to close the waveform device and delete the temp BGM file.
+      // StopPlayWav is a no-op if the device was never opened.
+      StopPlayWav();
       // Tear down every art thread, signal their tick events, and close
       // their handles in one shot.
       ShutdownArt();

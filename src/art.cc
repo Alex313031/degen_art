@@ -7,10 +7,13 @@
 volatile bool g_running = false; // Global art threads running state
 volatile bool g_paused  = false; // Affects g_running, used by IDM_PAUSED
 
-volatile bool g_circles = false; // IDM_ELLIPSES checked in the .rc menu.
-volatile bool g_beziers = false; // IDM_BEZIERS checked in the .rc menu.
-volatile bool g_lines   = false; // IDM_LINES checked in the .rc menu.
-volatile bool g_both    = true;  // IDM_BOTH default checked in the .rc menu.
+// These are only placeholders — the authoritative defaults are read from the
+// menu's CHECKED states by InitMenuDefaults (utils.cc) during WM_CREATE.
+// See degen_art.rc for which items actually carry the CHECKED flag.
+volatile bool g_circles = false;
+volatile bool g_beziers = false;
+volatile bool g_lines   = false;
+volatile bool g_both    = true;
 
 bool g_monochrome = false; // Whether monochrome colors only is enabled
 

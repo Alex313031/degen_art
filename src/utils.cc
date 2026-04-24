@@ -29,6 +29,7 @@ static int s_idxMute   = 0;
 static int s_idxPen    = 0;
 static int s_idxNoDraw = 0;
 static int s_idxShapes = 0;
+static int s_idxTimer  = 0;
 
 // Reads the CHECKED state of every menu group at startup and sets the
 // corresponding globals. This makes all defaults entirely RC-driven: changing
@@ -733,6 +734,9 @@ void CreateAppToolbar(HWND hParent, HINSTANCE hInst) {
   tbab.nID = IDB_SHAPES_BMP;
   s_idxShapes = static_cast<int>(
       SendMessageW(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
+  tbab.nID = IDB_TIME_BMP;
+  s_idxTimer = static_cast<int>(
+      SendMessageW(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
   tbab.nID = IDB_SOUND_BMP;
   s_idxSound = static_cast<int>(
       SendMessageW(hTB, TB_ADDBITMAP, 1, reinterpret_cast<LPARAM>(&tbab)));
@@ -751,50 +755,61 @@ void CreateAppToolbar(HWND hParent, HINSTANCE hInst) {
   //   fsStyle   — TBSTYLE_BUTTON (push button) or TBSTYLE_SEP (gap)
   //   dwData    — app-defined extra data we don't need
   //   iString   — tooltip/label text pointer (cast through INT_PTR)
-  TBBUTTON tbButtons[9] = {};
+  TBBUTTON tbButtons[13] = {};
 
-  tbButtons[0].iBitmap   = idxSave;
-  tbButtons[0].idCommand = IDM_SAVE_AS;
-  tbButtons[0].fsState   = TBSTATE_ENABLED;
-  tbButtons[0].fsStyle   = TBSTYLE_BUTTON;
-  tbButtons[0].iString   = reinterpret_cast<INT_PTR>(L"Save As");
+  tbButtons[0].fsStyle   = TBSTYLE_SEP;
 
-  tbButtons[1].fsStyle   = TBSTYLE_SEP;
+  tbButtons[1].iBitmap   = idxSave;
+  tbButtons[1].idCommand = IDM_SAVE_AS;
+  tbButtons[1].fsState   = TBSTATE_ENABLED;
+  tbButtons[1].fsStyle   = TBSTYLE_BUTTON;
+  tbButtons[1].iString   = reinterpret_cast<INT_PTR>(L"Save As");
 
-  // Painting controls clustered between the two separators.
-  tbButtons[2].iBitmap   = s_idxPause;
-  tbButtons[2].idCommand = IDM_PAUSED;
-  tbButtons[2].fsState   = TBSTATE_ENABLED;
-  tbButtons[2].fsStyle   = TBSTYLE_BUTTON;
-  tbButtons[2].iString   = reinterpret_cast<INT_PTR>(L"Pause");
+  tbButtons[2].fsStyle   = TBSTYLE_SEP;
 
-  tbButtons[3].iBitmap   = s_idxPen;
-  tbButtons[3].idCommand = IDM_DRAW;
+  tbButtons[3].iBitmap   = s_idxPause;
+  tbButtons[3].idCommand = IDM_PAUSED;
   tbButtons[3].fsState   = TBSTATE_ENABLED;
-  tbButtons[3].fsStyle   = TBSTYLE_BUTTON | TBSTYLE_DROPDOWN;
-  tbButtons[3].iString   = reinterpret_cast<INT_PTR>(L"Draw");
+  tbButtons[3].fsStyle   = TBSTYLE_BUTTON;
+  tbButtons[3].iString   = reinterpret_cast<INT_PTR>(L"Pause");
 
-  tbButtons[4].iBitmap   = s_idxShapes;
-  tbButtons[4].idCommand = IDM_SHAPES;
-  tbButtons[4].fsState   = TBSTATE_ENABLED;
-  tbButtons[4].fsStyle   = TBSTYLE_BUTTON | TBSTYLE_DROPDOWN;
-  tbButtons[4].iString   = reinterpret_cast<INT_PTR>(L"Shapes");
+  tbButtons[4].fsStyle   = TBSTYLE_SEP;
 
-  tbButtons[5].fsStyle   = TBSTYLE_SEP;
+  tbButtons[5].iBitmap   = s_idxPen;
+  tbButtons[5].idCommand = IDM_DRAW;
+  tbButtons[5].fsState   = TBSTATE_ENABLED;
+  tbButtons[5].fsStyle   = TBSTYLE_BUTTON | TBSTYLE_DROPDOWN;
+  tbButtons[5].iString   = reinterpret_cast<INT_PTR>(L"Draw");
 
-  tbButtons[6].iBitmap   = s_idxSound;
-  tbButtons[6].idCommand = IDM_SOUND;
+  tbButtons[6].iBitmap   = s_idxShapes;
+  tbButtons[6].idCommand = IDM_SHAPES;
   tbButtons[6].fsState   = TBSTATE_ENABLED;
-  tbButtons[6].fsStyle   = TBSTYLE_BUTTON;
-  tbButtons[6].iString   = reinterpret_cast<INT_PTR>(L"Play Music");
+  tbButtons[6].fsStyle   = TBSTYLE_BUTTON | TBSTYLE_DROPDOWN;
+  tbButtons[6].iString   = reinterpret_cast<INT_PTR>(L"Shapes");
 
-  tbButtons[7].fsStyle   = TBSTYLE_SEP;
+  tbButtons[7].iBitmap   = s_idxTimer;
+  tbButtons[7].idCommand = IDM_SPEED;
+  tbButtons[7].fsState   = TBSTATE_ENABLED;
+  tbButtons[7].fsStyle   = TBSTYLE_BUTTON | TBSTYLE_DROPDOWN;
+  tbButtons[7].iString   = reinterpret_cast<INT_PTR>(L"Speed");
 
-  tbButtons[8].iBitmap   = idxExit;
-  tbButtons[8].idCommand = IDM_EXIT;
-  tbButtons[8].fsState   = TBSTATE_ENABLED;
-  tbButtons[8].fsStyle   = TBSTYLE_BUTTON;
-  tbButtons[8].iString   = reinterpret_cast<INT_PTR>(L"Exit");
+  tbButtons[8].fsStyle   = TBSTYLE_SEP;
+
+  tbButtons[9].iBitmap   = s_idxSound;
+  tbButtons[9].idCommand = IDM_SOUND;
+  tbButtons[9].fsState   = TBSTATE_ENABLED;
+  tbButtons[9].fsStyle   = TBSTYLE_BUTTON;
+  tbButtons[9].iString   = reinterpret_cast<INT_PTR>(L"Play Music");
+
+  tbButtons[10].fsStyle  = TBSTYLE_SEP;
+
+  tbButtons[11].iBitmap   = idxExit;
+  tbButtons[11].idCommand = IDM_EXIT;
+  tbButtons[11].fsState   = TBSTATE_ENABLED;
+  tbButtons[11].fsStyle   = TBSTYLE_BUTTON;
+  tbButtons[11].iString   = reinterpret_cast<INT_PTR>(L"Exit");
+
+  tbButtons[12].fsStyle  = TBSTYLE_SEP;
 
   SendMessageW(hTB, TB_ADDBUTTONS,
               sizeof(tbButtons) / sizeof(tbButtons[0]),
@@ -928,6 +943,9 @@ bool HandleToolbarTooltips(NMHDR* pnmh) {
       break;
     case IDM_SHAPES:
       text = L"Choose which shapes && line styles to use";
+      break;
+    case IDM_SPEED:
+      text = L"Change Painting speed";
       break;
     case IDM_PAUSED:
       text = g_paused ? L"Resume Painting" : L"Pause Painting";

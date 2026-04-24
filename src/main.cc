@@ -31,14 +31,14 @@ HBITMAP g_hbmMem = nullptr;
 // (g_hdcMem / g_hbmMem) at the same time.
 CRITICAL_SECTION g_paintCS;
 
-// Current background color. Defaults to white, changed via the Background
+// Current background color. Defaults to black, changed via the Background
 // Color menu. Used when filling the back buffer on resize and on WM_PAINT.
-COLORREF g_bkg_color = RGB_WHITE;
+COLORREF g_bkg_color = RGB_BLACK;
 
 // Free-draw mode state. g_draw_mode is toggled by IDM_DRAW; g_draw_color is
-// the pen color chosen via IDM_PICKCOLOR (black until the user picks one).
+// the pen color chosen via IDM_PICKCOLOR (white until the user picks one).
 bool g_draw_mode      = false;
-COLORREF g_draw_color = RGB_BLACK;
+COLORREF g_draw_color = RGB_WHITE;
 
 // Per-stroke state, only meaningful while a left-button drag is in progress.
 static bool s_drawing        = false;
@@ -71,8 +71,8 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
   wndclass.hInstance     = hInstance;
   wndclass.hIcon         = LoadIconW(hInstance, MAKEINTRESOURCEW(IDI_MAIN));
   wndclass.hCursor       = LoadCursorW(nullptr, IDC_ARROW) ;
-  wndclass.hbrBackground = reinterpret_cast<HBRUSH>(GetStockObject(WHITE_BRUSH));
-  wndclass.lpszMenuName  = MAKEINTRESOURCEW(IDC_MAIN);
+  wndclass.hbrBackground = reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+  wndclass.lpszMenuName  = MAKEINTRESOURCEW(IDR_MAIN);
   wndclass.lpszClassName = szClassName;
   wndclass.hIconSm       = LoadIconW(hInstance, MAKEINTRESOURCEW(IDI_SMALL));
 
@@ -126,7 +126,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
     return 1;
   }
 
-  HACCEL hAccel = LoadAcceleratorsW(hInstance, MAKEINTRESOURCEW(IDC_MAIN));
+  HACCEL hAccel = LoadAcceleratorsW(hInstance, MAKEINTRESOURCEW(IDR_MAIN));
 
   MSG msg;
   while (GetMessageW(&msg, nullptr, 0, 0)) {
@@ -332,6 +332,15 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
                          pt.x, pt.y, 0, hWnd, nullptr);
           return TBDDRET_DEFAULT;
         }
+        if (pnmtb->iItem == IDM_SPEED) {
+          // Reuse Settings → Speed so the radio check mark on the active
+          // speed stays in sync with the menu-bar version automatically.
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
+          HMENU hSpeed    = GetSubMenu(hSettings, 8);
+          TrackPopupMenu(hSpeed, TPM_LEFTALIGN | TPM_TOPALIGN,
+                         pt.x, pt.y, 0, hWnd, nullptr);
+          return TBDDRET_DEFAULT;
+        }
       }
       break;
     }
@@ -373,6 +382,15 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
           HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
           HMENU hShapes   = GetSubMenu(hSettings, 4);
           PopupUnderToolbarButton(hWnd, IDM_SHAPES, hShapes);
+          break;
+        }
+        case IDM_SPEED: {
+          // Body-click equivalent of the TBN_DROPDOWN arrow path. Reuses
+          // Settings → Speed directly so the active speed radio check stays
+          // auto-synced with the menu-bar version.
+          HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
+          HMENU hSpeed    = GetSubMenu(hSettings, 8);
+          PopupUnderToolbarButton(hWnd, IDM_SPEED, hSpeed);
           break;
         }
         case IDM_DRAW: {
@@ -449,6 +467,9 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
             TogglePaintArt(hWnd); // toggles g_paused=true and KillTimer
             HMENU hSettings = GetSubMenu(GetMenu(hWnd), 2);
             CheckMenuItem(hSettings, IDM_PAUSED, MF_BYCOMMAND | MF_CHECKED);
+            // Mirror the paused state onto the toolbar's Pause/Resume
+            // button so icon + label match the menu check mark.
+            SetPauseButton(g_paused);
           }
           // Pulse every active art thread's tick event once. The timer is
           // off (paused), so this is the only source of ticks — each thread
@@ -812,18 +833,23 @@ bool LaunchHelp(HWND hWnd) {
 
 INT_PTR CALLBACK AboutDlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
   UNREFERENCED_PARAMETER(lParam);
-  static const HICON kAboutIcon = LoadIconW(g_hInstance, MAKEINTRESOURCEW(IDI_ABOUT));
   switch (message) {
     case WM_INITDIALOG:
       // Set icon in titlebar of about dialog
+      static const HICON kAboutIcon = LoadIconW(g_hInstance, MAKEINTRESOURCEW(IDI_ABOUT));
       SendMessageW(hDlg, WM_SETICON, ICON_SMALL, (LPARAM)kAboutIcon);
       SendMessageW(hDlg, WM_SETICON, ICON_BIG, (LPARAM)kAboutIcon);
+      return TRUE;
+    case WM_CLOSE:
+      EndDialog(hDlg, TRUE);
       return TRUE;
     case WM_COMMAND:
       if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL) {
         EndDialog(hDlg, LOWORD(wParam));
         return TRUE;
       }
+      break;
+    default:
       break;
   }
   return FALSE;

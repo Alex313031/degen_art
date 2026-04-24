@@ -19,9 +19,10 @@
 #define IDB_SOUND_BMP               110 /* "Speaker" icon for toolbar strip, same as Win2000 speaker icon*/
 #define IDB_MUTE_BMP                111 /* "Mute" icon for toolbar strip, overwrites Speaker icon when needed */
 #define IDB_SAVE_BMP                112 /* "Save" icon for toolbar strip, floppy disk icon */
+#define IDB_TIME_BMP                113 /* "Speed" icon for toolbar strip, timer icon */
 
 /* Main application resource, also used to attach menu */
-#define IDC_MAIN                    133
+#define IDR_MAIN                    133
 
 /* Dialogs */
 #define IDD_ABOUTDLG                150
@@ -101,8 +102,11 @@
 #define IDM_DRAW_GREEN              238
 #define IDM_DRAW_BLUE               239
 
-// Toolbar button menu identifier for "Shapes" button with submenu.
+// Toolbar button identifier for "Shapes" button with submenu.
 #define IDM_SHAPES                  240
+
+// Toolbar button identifier for "Speed" button with submenu.
+#define IDM_SPEED                   241
 
 // Dev menu items
 #define IDM_TESTTRAP                250

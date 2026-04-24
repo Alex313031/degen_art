@@ -164,7 +164,7 @@ BEGIN
     0x50,      IDM_PAUSED, VIRTKEY, CONTROL     // Ctrl+P Paused
     0x52,      IDM_REPAINT, VIRTKEY, NOINVERT   // R key Repaint
     0x52,      IDM_REPAINT, VIRTKEY, CONTROL    // Ctrl+R Repaint
-    VK_SPACE,  IDM_SINGLE, VIRTKEY, NOINVERT    // Spacebar Singl-step
+    VK_SPACE,  IDM_SINGLE, VIRTKEY, NOINVERT    // Spacebar Single-step
 END
 
 // About Dialog Box
@@ -186,10 +186,10 @@ GUIDELINES DESIGNINFO
 BEGIN
     IDD_ABOUTDLG, DIALOG
     BEGIN
-        LEFTMARGIN,   21
-        RIGHTMARGIN,  132
-        TOPMARGIN,    12
-        BOTTOMMARGIN, 56
+        LEFTMARGIN,   7
+        RIGHTMARGIN,  125
+        TOPMARGIN,    7
+        BOTTOMMARGIN, 49
     END
 END
 #endif
@@ -212,14 +212,14 @@ BEGIN
     BEGIN
         BLOCK "040904B0" // 0x0409 = US English, 0x04B0 = Unicode (1200)
         BEGIN
-            VALUE "Comments", "https://github.com/Alex313031/degen_art"
-            VALUE "CompanyName", "Alex313031"
-            VALUE "FileDescription", "Threaded GDI Art Generator Application"
+            VALUE "Comments", "https://github.com/Alex313031/degen_art\0"
+            VALUE "CompanyName", "Alex313031\0"
+            VALUE "FileDescription", "Threaded GDI Art Generator Application\0"
             VALUE "FileVersion", VERSION_STRING
-            VALUE "InternalName", "degen_art"
+            VALUE "InternalName", "degen_art\0"
             VALUE "LegalCopyright", LEGAL_COPYRIGHT
-            VALUE "LegalTrademarks", "BSD-3"
-            VALUE "OriginalFilename", "degen_art.exe"
+            VALUE "LegalTrademarks", "BSD-3\0"
+            VALUE "OriginalFilename", "degen_art.exe\0"
             VALUE "ProductName", APP_NAME
             VALUE "ProductVersion", VERSION_STRING
         END

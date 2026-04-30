@@ -876,7 +876,10 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 }
 
 void ShutDownApp() {
+  // Stop all sound
   StopPlayWav();
+  // De-initialize logging, which closes any console window open
+  logging::DeInitLogging(g_hInstance); // Can't log anything more after this
   // WM_DESTROY will call ShutdownArt() for us — DestroyWindow triggers that
   // path synchronously, so we don't need to touch thread state here.
   DestroyWindow(mainHwnd);

@@ -34,5 +34,13 @@ config("degen_art_config") {
     "-Wunused-function",
     "-Wno-div-by-zero",
   ]
-  libs = [ "winmm", ]
+  libs = [
+    "kernel32",
+    "user32",
+    "shell32",
+    "comctl32",
+    "comdlg32",
+    "gdi32",
+    "winmm",
+  ]
 }

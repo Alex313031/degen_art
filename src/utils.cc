@@ -212,13 +212,13 @@ bool SaveClientBitmap(HWND hWnd) {
   }
 
   DWORD written;
-  const bool ok =
+  const bool success =
       WriteFile(hFile, &bf,           sizeof(bf),      &written, nullptr) &&
       WriteFile(hFile, &bi,           sizeof(bi),      &written, nullptr) &&
       WriteFile(hFile, pixels.data(), bi.biSizeImage,  &written, nullptr);
 
   CloseHandle(hFile);
-  return ok;
+  return success;
 }
 
 inline static void __KillInt3Asm() {
